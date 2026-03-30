@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Internal configuration — do not commit
+NEXUS_9_MANIFEST.json
+migrated_prompt_history/
