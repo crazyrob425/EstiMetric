@@ -1,11 +1,13 @@
-<div align="center">
+# EstiMetric: Precision Bidding & Site Surveying
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+EstiMetric is a high-performance tool for tradesmen and architects, combining computer vision with trade-specific AI reasoning to deliver accurate bids in minutes.
 
-  <h1>Built with AI Studio</h2>
+## Core Features
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+- **Optic Scan**: Calibrate room scale using standard visual benchmarks.
+- **Forensic Material Audit**: Automatic structural and stylistic verification of material lists.
+- **Live Pricing Intelligence**: Real-time retail inventory polling via Google Maps & Search.
+- **The Foreman**: A built-in trade expert trained on 30 years of site management experience.
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
-
-</div>
+---
+*EstiMetric: Deep Takeoffs. True Bids. Zero Fluff.*
