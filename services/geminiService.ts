@@ -3,6 +3,17 @@ import { MaterialItem, QuoteAnalysisResponse, ProjectTier, ProjectSpecs, BidData
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
+// Shared AudioContext — created once, reused for all TTS playback
+let _audioCtx: AudioContext | null = null;
+let _currentSource: AudioBufferSourceNode | null = null;
+
+function getAudioContext(): AudioContext {
+  if (!_audioCtx || _audioCtx.state === 'closed') {
+    _audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+  }
+  return _audioCtx;
+}
+
 const controlTools: FunctionDeclaration[] = [
   {
     name: 'navigateTo',
@@ -82,12 +93,23 @@ export async function speakText(text: string, voiceName: string = 'Fenrir'): Pro
     });
     const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
     if (!base64Audio) return;
-    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+
+    // Stop any currently playing audio
+    if (_currentSource) {
+      try { _currentSource.stop(); } catch { /* already stopped */ }
+      _currentSource = null;
+    }
+
+    const audioCtx = getAudioContext();
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+
     const audioBuffer = await decodePcmData(decodeBase64(base64Audio), audioCtx, 24000, 1);
     const source = audioCtx.createBufferSource();
     source.buffer = audioBuffer;
     source.connect(audioCtx.destination);
+    source.onended = () => { _currentSource = null; };
     source.start();
+    _currentSource = source;
   } catch (error) {
     console.warn("Audio output suppressed.");
   }

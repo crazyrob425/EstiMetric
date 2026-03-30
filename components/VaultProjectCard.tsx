@@ -1,19 +1,32 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { motion } from 'framer-motion';
-import { FileText, ChevronRight, User, DollarSign, Layers } from 'lucide-react';
+import { ChevronRight, User, DollarSign, Layers, FileCheck, FileClock, FileEdit } from 'lucide-react';
 import { BidData } from '../types.ts';
 import MetallicPanel from './MetallicPanel.tsx';
+import { useCountUp } from '../hooks/useCountUp.ts';
 
 interface VaultProjectCardProps {
   bid: BidData;
+  currencySymbol: string;
   onAudit: (bid: BidData) => void;
 }
 
-const VaultProjectCard: React.FC<VaultProjectCardProps> = ({ bid, onAudit }) => {
+const VaultProjectCard: React.FC<VaultProjectCardProps> = ({ bid, currencySymbol, onAudit }) => {
   const totalCost = (bid.materials?.reduce((acc, m) => acc + (m.unitPrice * (parseFloat(m.quantity) || 1)), 0) || 0) + (bid.laborCost || 0);
+  const totalRef = useRef<HTMLSpanElement>(null);
+  useCountUp(totalRef, totalCost, currencySymbol, 1000);
+
+  const statusConfig: Record<string, { icon: React.ReactNode; cls: string }> = {
+    Draft: { icon: <FileEdit size={10} />, cls: 'bg-slate-500/10 border-slate-500/20 text-slate-400' },
+    Sent: { icon: <FileClock size={10} />, cls: 'bg-blue-500/10 border-blue-500/20 text-blue-400' },
+    Approved: { icon: <FileCheck size={10} />, cls: 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' },
+  };
+  const sc = statusConfig[bid.status] || statusConfig.Draft;
 
   return (
     <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
       whileHover={{ scale: 1.01 }}
       whileTap={{ scale: 0.99 }}
       className="group cursor-pointer"
@@ -23,19 +36,15 @@ const VaultProjectCard: React.FC<VaultProjectCardProps> = ({ bid, onAudit }) => 
         <div className="flex justify-between items-start mb-6">
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center gap-2">
-              <span className={`text-[9px] font-black px-3 py-1 rounded-md uppercase tracking-[0.15em] border ${
-                bid.status === 'Draft' ? 'bg-slate-500/10 border-slate-500/20 text-slate-400' :
-                bid.status === 'Approved' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
-                'bg-blue-500/10 border-blue-500/20 text-blue-400'
-              }`}>
-                {bid.status}
+              <span className={`flex items-center gap-1.5 text-[9px] font-black px-3 py-1 rounded-md uppercase tracking-[0.15em] border ${sc.cls}`}>
+                {sc.icon} {bid.status}
               </span>
             </div>
             <h3 className="text-xl font-bold text-white group-hover:text-blue-400 transition-colors">{bid.projectName}</h3>
           </div>
           <div className="text-right flex flex-col items-end">
             <span className="text-slate-500 text-[10px] font-black tracking-widest uppercase">{bid.date}</span>
-            <span className="text-blue-500/60 text-[8px] font-black tracking-widest mt-1">v.2.0-STABLE</span>
+            <span className="text-blue-500/40 text-[8px] font-black tracking-widest mt-1">v3.0-ENTERPRISE</span>
           </div>
         </div>
 
@@ -62,7 +71,7 @@ const VaultProjectCard: React.FC<VaultProjectCardProps> = ({ bid, onAudit }) => 
               <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Gross Valuation</span>
               <div className="flex items-center gap-1 mt-1">
                 <DollarSign size={16} className="text-emerald-500" />
-                <span className="text-2xl font-black text-white tracking-tighter">${totalCost.toLocaleString()}</span>
+                <span ref={totalRef} className="text-2xl font-black text-white tracking-tighter">{currencySymbol}0</span>
               </div>
             </div>
             <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center border border-white/5 group-hover:bg-blue-600 group-hover:text-white transition-all duration-500">
@@ -71,10 +80,8 @@ const VaultProjectCard: React.FC<VaultProjectCardProps> = ({ bid, onAudit }) => 
           </div>
         </div>
 
-        <button 
-          className="w-full py-4 bg-white/5 group-hover:bg-blue-600 rounded-xl font-black text-[10px] uppercase tracking-widest border border-white/10 group-hover:border-blue-500 transition-all duration-300"
-        >
-          Audit Project Ledger
+        <button className="w-full py-4 bg-white/5 group-hover:bg-blue-600 rounded-xl font-black text-[10px] uppercase tracking-widest border border-white/10 group-hover:border-blue-500 transition-all duration-300">
+          Open Project Detail
         </button>
       </MetallicPanel>
     </motion.div>

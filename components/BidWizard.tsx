@@ -1,5 +1,8 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useDropzone } from 'react-dropzone';
+import { toast } from 'react-hot-toast';
 import { analyzeRemodelProject, analyzeRemodelProjectFromText, fetchLivePricing, simulateRemodel, generateGrandmasterProposal, getRecommendedStyles, optimizeMaterials } from '../services/geminiService.ts';
+import { compressDataUrl, compressImageToBase64 } from '../services/imageUtils.ts';
 import { BidData, MaterialItem, ProjectTier, AppSettings, ProjectSpecs, SpatialData, RemodelStyle, MaterialSuggestion } from '../types.ts';
 import MetallicPanel from './MetallicPanel.tsx';
 import * as THREE from 'three';
@@ -52,53 +55,117 @@ const BidWizard: React.FC<BidWizardProps> = ({ onComplete, initialBid, settings,
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const startCamera = async () => { try { const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }); if (videoRef.current) videoRef.current.srcObject = s; } catch (e) { alert("Camera Denied"); } };
-  const capture = () => {
+  const stopCamera = () => {
+    if (videoRef.current?.srcObject) {
+      (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
+      videoRef.current.srcObject = null;
+    }
+  };
+
+  // Stop camera when unmounting or leaving step 2
+  useEffect(() => {
+    return () => stopCamera();
+  }, []);
+
+  useEffect(() => {
+    if (step !== 2) stopCamera();
+  }, [step]);
+
+  const startCamera = async () => {
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      if (videoRef.current) videoRef.current.srcObject = s;
+    } catch (e) {
+      toast.error('Camera access denied. Enable in browser settings.');
+    }
+  };
+
+  const capture = async () => {
     if (videoRef.current && canvasRef.current) {
       const ctx = canvasRef.current.getContext('2d');
       canvasRef.current.width = videoRef.current.videoWidth;
       canvasRef.current.height = videoRef.current.videoHeight;
       ctx?.drawImage(videoRef.current, 0, 0);
       const dataUrl = canvasRef.current.toDataURL('image/jpeg');
+      stopCamera();
       setBeforePreview(dataUrl);
-      setBid({ ...bid, beforePhoto: dataUrl.split(',')[1] });
-      if (videoRef.current.srcObject) (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
+      // Compress before storing and sending to AI
+      try {
+        const compressed = await compressDataUrl(dataUrl);
+        setBid({ ...bid, beforePhoto: compressed });
+      } catch {
+        setBid({ ...bid, beforePhoto: dataUrl.split(',')[1] });
+      }
     }
   };
 
+  // File drop handler for desktop photo import
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    accept: { 'image/*': [] },
+    maxFiles: 1,
+    onDrop: async (files) => {
+      if (!files[0]) return;
+      const objectUrl = URL.createObjectURL(files[0]);
+      setBeforePreview(objectUrl);
+      try {
+        const compressed = await compressImageToBase64(files[0]);
+        setBid(prev => ({ ...prev, beforePhoto: compressed }));
+        toast.success('Photo loaded');
+      } catch {
+        toast.error('Failed to compress photo');
+      }
+    },
+  });
+
   const analyze = async () => {
     setLoading(true); setLoadingMsg("Synchronizing Site Dynamics...");
+    const toastId = toast.loading('Analyzing project...');
     try {
-      const result = entryMode === 'OPTICS' && bid.beforePhoto ? await analyzeRemodelProject(bid.beforePhoto, specs.roomType, bid.projectTier!, settings.thinkingBudget) : await analyzeRemodelProjectFromText(specs, bid.projectTier!, settings.thinkingBudget);
+      const result = entryMode === 'OPTICS' && bid.beforePhoto
+        ? await analyzeRemodelProject(bid.beforePhoto, specs.roomType, bid.projectTier!, settings.thinkingBudget)
+        : await analyzeRemodelProjectFromText(specs, bid.projectTier!, settings.thinkingBudget);
       const tempBid = { ...bid, ...result, materials: result.suggestedMaterials };
       setBid(tempBid);
-      
-      setLoadingMsg("Intelligently Matching Styles...");
-      const styles = await getRecommendedStyles(tempBid);
-      setRecommendedStyles(styles);
-      if (styles.length > 0) setActiveStyle(styles[0]);
 
-      const mockup = await simulateRemodel(bid.beforePhoto || null, null, specs.notes, bid.projectTier!, styles[0] || activeStyle);
+      setLoadingMsg("Generating Visuals & Style Audit...");
+
+      // Parallelize: style recommendations + mockup + material audit run concurrently
+      const [styles, mockup, suggestions] = await Promise.all([
+        getRecommendedStyles(tempBid),
+        simulateRemodel(bid.beforePhoto || null, null, specs.notes, bid.projectTier!, activeStyle),
+        optimizeMaterials(tempBid.materials || [], specs, bid.projectTier!, activeStyle, settings.thinkingBudget),
+      ]);
+
+      setRecommendedStyles(styles);
+      const bestStyle = styles[0] || activeStyle;
+      if (styles.length > 0) setActiveStyle(bestStyle);
+
       setBid(prev => ({ ...prev, afterMockup: mockup }));
-      
-      setLoadingMsg("Running Forensic Material Audit...");
-      const suggestions = await optimizeMaterials(tempBid.materials || [], specs, bid.projectTier!, styles[0] || activeStyle, settings.thinkingBudget);
       setMaterialSuggestions(suggestions);
 
+      toast.success('Analysis complete!', { id: toastId });
       setStep(3);
-    } finally { setLoading(false); }
+    } catch (e) {
+      toast.error('Analysis failed — check your connection', { id: toastId });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const changeStyle = async (newStyle: RemodelStyle) => {
     setActiveStyle(newStyle);
     setLoading(true); setLoadingMsg(`Rendering ${newStyle} Projection...`);
     try {
-      const mockup = await simulateRemodel(bid.beforePhoto || null, null, specs.notes, bid.projectTier!, newStyle);
+      // Parallelize mockup + material re-audit for style change
+      const [mockup, suggestions] = await Promise.all([
+        simulateRemodel(bid.beforePhoto || null, null, specs.notes, bid.projectTier!, newStyle),
+        optimizeMaterials(bid.materials || [], specs, bid.projectTier!, newStyle, settings.thinkingBudget),
+      ]);
       setBid(prev => ({ ...prev, afterMockup: mockup }));
-      
-      setLoadingMsg("Re-Auditing Materials for New Style...");
-      const suggestions = await optimizeMaterials(bid.materials || [], specs, bid.projectTier!, newStyle, settings.thinkingBudget);
       setMaterialSuggestions(suggestions);
+      toast.success(`${newStyle} style applied`);
+    } catch {
+      toast.error('Style change failed');
     } finally { setLoading(false); }
   };
 
@@ -112,33 +179,45 @@ const BidWizard: React.FC<BidWizardProps> = ({ onComplete, initialBid, settings,
     }
     setBid({ ...bid, materials: updatedMaterials });
     setMaterialSuggestions(prev => prev.filter(s => s !== suggestion));
+    toast.success('Material updated');
   };
 
   const generateProposal = async () => {
     setLoading(true); setLoadingMsg("Architecting Final Bid...");
+    const toastId = toast.loading('Generating proposal...');
     try {
       const draft = await generateGrandmasterProposal(bid, "", settings.thinkingBudget);
-      setLetterDraft(draft); setStep(4);
+      setLetterDraft(draft);
+      // Store the proposal letter in the bid object
+      setBid(prev => ({ ...prev, proposalLetter: draft }));
+      setStep(4);
+      toast.success('Proposal ready!', { id: toastId });
+    } catch {
+      toast.error('Proposal generation failed', { id: toastId });
     } finally { setLoading(false); }
   };
 
   const handlePriceCheck = async (idx: number) => {
     const mat = bid.materials![idx];
     setLoading(true); setLoadingMsg(`Geolocating Suppliers for ${mat.name}...`);
+    const toastId = toast.loading(`Fetching live price for ${mat.name}...`);
     try {
       const data = await fetchLivePricing(mat.name, settings, userLocation);
       const updated = [...bid.materials!];
-      updated[idx] = { 
-        ...mat, 
-        unitPrice: parseFloat(data.price.replace('$','')) || mat.unitPrice, 
-        confidence: data.confidence, 
-        sourceUrl: data.sourceUrl, 
+      updated[idx] = {
+        ...mat,
+        unitPrice: parseFloat(data.price.replace('$', '')) || mat.unitPrice,
+        confidence: data.confidence,
+        sourceUrl: data.sourceUrl,
         mapUrl: data.mapUrl,
         source: data.sourceName,
         amazonPrice: data.amazonPrice,
-        auditDelta: data.auditDelta
+        auditDelta: data.auditDelta,
       };
       setBid({ ...bid, materials: updated });
+      toast.success(`Price updated: ${data.price}`, { id: toastId });
+    } catch {
+      toast.error('Price lookup failed', { id: toastId });
     } finally { setLoading(false); }
   };
 
@@ -160,10 +239,31 @@ const BidWizard: React.FC<BidWizardProps> = ({ onComplete, initialBid, settings,
              <button onClick={() => setEntryMode('SYSTEMATIC')} className={`flex-1 py-3 rounded-xl font-black uppercase text-[10px] ${entryMode === 'SYSTEMATIC' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}>Systematic</button>
           </div>
           {entryMode === 'OPTICS' ? (
-            <div className="aspect-video bg-slate-100 rounded-[2.5rem] border-4 border-dashed border-slate-300 overflow-hidden relative flex items-center justify-center">
-               {beforePreview ? <img src={beforePreview} className="w-full h-full object-cover" /> : <div className="text-center font-black text-slate-300 uppercase px-12">Site Photo or Blueprint Required</div>}
-               <div className="absolute bottom-6 flex gap-2"><button onClick={startCamera} className="bg-slate-800 text-white px-6 py-3 rounded-full text-[10px] font-black uppercase">Start Cam</button><button onClick={capture} className="bg-blue-600 text-white px-6 py-3 rounded-full text-[10px] font-black uppercase">Capture</button></div>
-               <video ref={videoRef} autoPlay playsInline className="hidden" /><canvas ref={canvasRef} className="hidden" />
+            <div className="space-y-3">
+              <div className="aspect-video bg-slate-100 rounded-[2.5rem] border-4 border-dashed border-slate-300 overflow-hidden relative flex items-center justify-center">
+                {beforePreview
+                  ? <img src={beforePreview} className="w-full h-full object-cover" />
+                  : (
+                    <div
+                      {...getRootProps()}
+                      className={`w-full h-full flex flex-col items-center justify-center cursor-pointer transition-colors ${isDragActive ? 'bg-blue-50' : ''}`}
+                    >
+                      <input {...getInputProps()} />
+                      <div className="text-center font-black text-slate-300 uppercase px-12">
+                        {isDragActive ? 'Drop photo here' : 'Drag & drop photo or use camera'}
+                      </div>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-2">Supports JPG, PNG, HEIC</p>
+                    </div>
+                  )
+                }
+                <div className="absolute bottom-6 flex gap-2">
+                  <button onClick={startCamera} className="bg-slate-800 text-white px-6 py-3 rounded-full text-[10px] font-black uppercase">Start Cam</button>
+                  <button onClick={capture} className="bg-blue-600 text-white px-6 py-3 rounded-full text-[10px] font-black uppercase">Capture</button>
+                  {beforePreview && <button onClick={() => { setBeforePreview(null); setBid(p => ({ ...p, beforePhoto: undefined })); }} className="bg-red-500/80 text-white px-4 py-3 rounded-full text-[10px] font-black uppercase">Clear</button>}
+                </div>
+                <video ref={videoRef} autoPlay playsInline className="hidden" />
+                <canvas ref={canvasRef} className="hidden" />
+              </div>
             </div>
           ) : (
              <div className="p-8 bg-white/40 rounded-[2.5rem] border border-slate-200 grid grid-cols-2 gap-4">
@@ -304,7 +404,17 @@ const BidWizard: React.FC<BidWizardProps> = ({ onComplete, initialBid, settings,
       case 4: return (
         <div className="space-y-6 animate-fadeIn pb-12">
           <div className="bg-white p-12 rounded-[3rem] shadow-inner border border-slate-200 min-h-[400px] text-lg italic leading-relaxed font-serif whitespace-pre-wrap">{letterDraft}</div>
-          <button onClick={() => { confetti(); onComplete(bid as BidData); }} className="w-full bg-slate-900 text-white py-8 rounded-3xl font-black text-xl uppercase tracking-widest shadow-2xl">Publish To Dashboard</button>
+          <button
+            onClick={() => {
+              if (!bid.projectName?.trim()) { toast.error('Project name is required'); return; }
+              if (!bid.clientName?.trim()) { toast.error('Client name is required'); return; }
+              confetti({ particleCount: 120, spread: 70, origin: { y: 0.6 } });
+              onComplete(bid as BidData);
+            }}
+            className="w-full bg-slate-900 text-white py-8 rounded-3xl font-black text-xl uppercase tracking-widest shadow-2xl hover:bg-blue-700 transition-all"
+          >
+            Publish To Dashboard
+          </button>
         </div>
       );
       default: return null;
