@@ -31,7 +31,8 @@ const ThreeRoomView: React.FC<{ spatial: SpatialData }> = ({ spatial }) => {
     const line = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), new THREE.LineBasicMaterial({ color: 0x3b82f6 })); scene.add(line);
     const animate = () => { requestAnimationFrame(animate); line.rotation.y += 0.01; renderer.render(scene, camera); };
     animate();
-    return () => { renderer.dispose(); if (mountRef.current) mountRef.current.removeChild(renderer.domElement); };
+    const currentMount = mountRef.current;
+    return () => { renderer.dispose(); if (currentMount) currentMount.removeChild(renderer.domElement); };
   }, [spatial]);
   return <div ref={mountRef} className="w-full h-full" />;
 };

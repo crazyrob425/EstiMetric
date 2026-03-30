@@ -47,6 +47,7 @@ const VirtualToolbox: React.FC<VirtualToolboxProps> = ({ onClose, settings, user
     if (activeTool === 'spatial') initSpatialProcessing();
 
     return () => stopAllSensors();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTool]);
 
   const stopAllSensors = () => {
@@ -110,11 +111,11 @@ const VirtualToolbox: React.FC<VirtualToolboxProps> = ({ onClose, settings, user
         
         try {
           if (typeof cv !== 'undefined' && cv.Mat) {
-            let src = cv.imread(canvas);
-            let dst = new cv.Mat();
+            const src = cv.imread(canvas);
+            const dst = new cv.Mat();
             cv.cvtColor(src, src, cv.COLOR_RGBA2GRAY, 0);
             cv.Canny(src, dst, 50, 150, 3);
-            let lines = new cv.Mat();
+            const lines = new cv.Mat();
             cv.HoughLinesP(dst, lines, 1, Math.PI / 180, 50, 30, 10);
             
             const detectedLines: {p1: Point, p2: Point}[] = [];
@@ -186,8 +187,8 @@ const VirtualToolbox: React.FC<VirtualToolboxProps> = ({ onClose, settings, user
     const rect = overlayRef.current?.getBoundingClientRect();
     if (!rect) return;
     
-    let x = (e.clientX - rect.left) * (overlayRef.current!.width / rect.width);
-    let y = (e.clientY - rect.top) * (overlayRef.current!.height / rect.height);
+    const x = (e.clientX - rect.left) * (overlayRef.current!.width / rect.width);
+    const y = (e.clientY - rect.top) * (overlayRef.current!.height / rect.height);
 
     const newPoints = [...points, {x, y}];
     if (isCalibrating) {

@@ -34,7 +34,7 @@ const GrandMasterChat: React.FC<{ onClose: () => void, initialContext?: any, onC
         }
       ]);
     }
-  }, [isAwake]);
+  }, [isAwake, messages.length]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });

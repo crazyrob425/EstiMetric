@@ -54,7 +54,7 @@ const deepNode = async (input: string, context: any) => {
  */
 export async function runForemanGraph(userInput: string, appState: any) {
   try {
-    let currentState: ForemanState = {
+    const currentState: ForemanState = {
       messages: [{ role: 'user', content: userInput }],
       routing: 'INITIALIZING',
       hardware: 'BOOT',

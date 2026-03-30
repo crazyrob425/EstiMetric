@@ -8,7 +8,6 @@ import GrandMasterChat from './components/GrandMasterChat.tsx';
 import HelpMenu from './components/HelpMenu.tsx';
 import VaultProjectCard from './components/VaultProjectCard.tsx';
 import { BidData, AppSettings } from './types.ts';
-import { gmsa } from './services/systemsArchitect.ts';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'vault' | 'toolbox' | 'foreman' | 'new'>('vault');
