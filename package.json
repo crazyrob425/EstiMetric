@@ -11,10 +11,10 @@
   "dependencies": {
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "@google/genai": "0.21.0",
+    "@google/genai": "1.47.0",
     "three": "0.160.0",
     "canvas-confetti": "1.9.2",
-    "framer-motion": "11.0.8",
+    "framer-motion": "12.38.0",
     "lucide-react": "0.460.0"
   },
   "devDependencies": {
