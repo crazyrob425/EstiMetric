@@ -29,9 +29,9 @@ const controlTools: FunctionDeclaration[] = [
   }
 ];
 
-const getThinkingBudget = (level: ThinkingBudget, model: string): number => {
-  if (level !== 'Deep') return 0;
-  return model.includes('pro') ? 32768 : 24576;
+const getThinkingBudget = (level: ThinkingBudget, model: string): string => {
+  if (level !== 'Deep') return 'LOW';
+  return 'HIGH';
 };
 
 function decodeBase64(base64: string): Uint8Array {
@@ -61,7 +61,7 @@ export async function chatWithGrandMaster(message: string, context?: any): Promi
   try {
     const isAwake = context?.isAwake || false;
     const model = isAwake ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
-    let systemInstruction = isAwake 
+    const systemInstruction = isAwake 
       ? "IDENTITY: Design Lead. PROFILE: Highly sophisticated architectural consultant and creative partner. Tone: Collaborative, encouraging, and visionary. Goal: Assist Rob in elevating projects through advanced design theory." 
       : "IDENTITY: The Foreman. PROFILE: Practical, direct construction veteran. Expert in codes and efficiency. Tone: Terse, no-nonsense, focused on structural integrity and budget.";
 
@@ -69,7 +69,7 @@ export async function chatWithGrandMaster(message: string, context?: any): Promi
       model: model,
       contents: [{ role: "user", parts: [{ text: `CONTEXT: ${JSON.stringify(context)}\nMSG: ${message}` }] }],
       config: {
-        thinkingConfig: { thinkingBudget: getThinkingBudget(context?.thinkingBudget || context?.settings?.thinkingBudget || 'Standard', model) },
+        thinkingConfig: { thinkingLevel: getThinkingBudget(context?.thinkingBudget || context?.settings?.thinkingBudget || 'Standard', model) as any },
         tools: isAwake ? [{ functionDeclarations: controlTools }] : [{ googleSearch: {} }],
         systemInstruction: systemInstruction
       }
@@ -122,7 +122,7 @@ export async function optimizeMaterials(materials: MaterialItem[], specs: Projec
       model: model,
       contents: `Audit materials for a ${style} ${tier} project: ${JSON.stringify(materials)}. Based on specs: ${JSON.stringify(specs)}. Return a JSON array of MaterialSuggestion objects.`,
       config: { 
-        thinkingConfig: { thinkingBudget: getThinkingBudget(budget, model) }, 
+        thinkingConfig: { thinkingLevel: getThinkingBudget(budget, model) as any }, 
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
@@ -197,7 +197,7 @@ export async function analyzeRemodelProject(imageBytes: string, projectType: str
         ] 
       },
       config: { 
-        thinkingConfig: { thinkingBudget: getThinkingBudget(budget, model) }, 
+        thinkingConfig: { thinkingLevel: getThinkingBudget(budget, model) as any }, 
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -252,7 +252,7 @@ export async function analyzeRemodelProjectFromText(specs: ProjectSpecs, tier: P
       model: model,
       contents: `Perform architectural analysis for the following project: ${JSON.stringify(specs)}. Tier: ${tier}. Return JSON.`,
       config: { 
-        thinkingConfig: { thinkingBudget: getThinkingBudget(budget, model) }, 
+        thinkingConfig: { thinkingLevel: getThinkingBudget(budget, model) as any }, 
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -321,7 +321,7 @@ export async function generateGrandmasterProposal(bid: Partial<BidData>, extraNo
     const response = await ai.models.generateContent({
       model: model,
       contents: `Draft a professional architectural bid proposal based on: ${JSON.stringify(bid)}. Extra context: ${extraNotes}. Tone: Authoritative yet accessible.`,
-      config: { thinkingConfig: { thinkingBudget: getThinkingBudget(budget, model) } }
+      config: { thinkingConfig: { thinkingLevel: getThinkingBudget(budget, model) as any } }
     });
     return response.text || "Proposal failed to generate.";
   } catch (e) { return "Draft unavailable."; }

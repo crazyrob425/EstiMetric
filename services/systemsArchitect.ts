@@ -65,7 +65,7 @@ class GrandMasterArchitect {
 
   public async runDailyMaintenance(settings: AppSettings): Promise<RepairReport> {
     const tasks: string[] = ["Audited system anomaly logs.", "Verified bid data parity."];
-    let stressLevel = Math.min(100, this.incidentLog.length * 5);
+    const stressLevel = Math.min(100, this.incidentLog.length * 5);
 
     if (stressLevel > 40) {
       try { sessionStorage.clear(); } catch(e) {}
@@ -106,7 +106,7 @@ class GrandMasterArchitect {
         config: {
           systemInstruction: "You are the GMSA. Technical, professional, and reassuring. Report the maintenance results.",
           maxOutputTokens: 256,
-          thinkingConfig: { thinkingBudget: 128 }
+          thinkingConfig: { thinkingLevel: 'LOW' }
         }
       });
 
