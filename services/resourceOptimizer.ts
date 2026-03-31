@@ -5,7 +5,7 @@ import { fetchLivePricing, simulateRemodel } from "./geminiService.ts";
 import { AppSettings } from "../types.ts";
 import { gmsa } from "./systemsArchitect.ts";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export interface SystemState {
   charging: boolean;

@@ -79,6 +79,16 @@ export interface QuoteAnalysisResponse {
   spatialProfile: SpatialData;
 }
 
+export interface UserProfile {
+  uid: string;
+  email: string;
+  displayName?: string;
+  photoURL?: string;
+  membershipTier: 'Free' | 'Pro' | 'Elite' | 'Enterprise';
+  isBeta: boolean;
+  createdAt: string;
+}
+
 export interface AppSettings {
   cameraCountdown: number;
   defaultProjectTier: ProjectTier;

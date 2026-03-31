@@ -1,7 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { AppSettings } from "../types.ts";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export interface Incident {
   id: string;
@@ -101,7 +101,7 @@ class GrandMasterArchitect {
   private async generateArchitectReport(tasks: string[], settings: AppSettings, stressLevel: number): Promise<RepairReport> {
     try {
       const response = await ai.models.generateContent({
-        model: "gemini-3-pro-preview",
+        model: "gemini-3.1-pro-preview",
         contents: `Report on maintenance: ${tasks.join(', ')}. Stress: ${stressLevel}%.`,
         config: {
           systemInstruction: "You are the GMSA. Technical, professional, and reassuring. Report the maintenance results.",

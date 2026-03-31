@@ -1,7 +1,7 @@
 import { GoogleGenAI, Modality, FunctionDeclaration, Type, GenerateContentResponse } from "@google/genai";
 import { MaterialItem, QuoteAnalysisResponse, ProjectTier, ProjectSpecs, BidData, RemodelStyle, ThinkingBudget, AppSettings, MaterialSuggestion } from "../types.ts";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 const controlTools: FunctionDeclaration[] = [
   {
@@ -49,7 +49,7 @@ async function decodePcmData(data: Uint8Array, ctx: AudioContext, sampleRate: nu
 export async function chatWithGrandMaster(message: string, context?: any): Promise<{ text: string, toolCalls?: any[] }> {
   try {
     const isAwake = context?.isAwake || false;
-    const model = isAwake ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
+    const model = isAwake ? 'gemini-3.1-pro-preview' : 'gemini-3-flash-preview';
     const systemInstruction = isAwake 
       ? "IDENTITY: Design Lead. PROFILE: Highly sophisticated architectural consultant and creative partner. Tone: Collaborative, encouraging, and visionary. Goal: Assist Rob in elevating projects through advanced design theory." 
       : "IDENTITY: The Foreman. PROFILE: Practical, direct construction veteran. Expert in codes and efficiency. Tone: Terse, no-nonsense, focused on structural integrity and budget.";
@@ -95,7 +95,7 @@ export async function speakText(text: string, voiceName: string = 'Fenrir'): Pro
 
 export async function optimizeMaterials(materials: MaterialItem[], specs: ProjectSpecs, tier: ProjectTier, style: RemodelStyle, budget: ThinkingBudget = 'Standard'): Promise<MaterialSuggestion[]> {
   try {
-    const model = "gemini-3-pro-preview";
+    const model = "gemini-3.1-pro-preview";
     const response = await ai.models.generateContent({
       model: model,
       contents: `Audit materials for a ${style} ${tier} project: ${JSON.stringify(materials)}. Based on specs: ${JSON.stringify(specs)}. Return a JSON array of MaterialSuggestion objects.`,
@@ -133,20 +133,12 @@ export async function optimizeMaterials(materials: MaterialItem[], specs: Projec
 
 export async function fetchLivePricing(materialName: string, settings: AppSettings, userLocation?: { lat: number, lon: number } | null): Promise<any> {
   try {
-    const modelName = 'gemini-2.5-flash-native-audio-preview-12-2025';
+    const modelName = 'gemini-3-flash-preview';
     const response = await ai.models.generateContent({
       model: modelName,
       contents: `Current price for "${materialName}" in ${settings.zipCode || 'the user\'s local area'}. Return price, source, and a brief audit delta compared to average.`,
       config: { 
-        tools: [{ googleMaps: {} }, { googleSearch: {} }],
-        toolConfig: userLocation ? {
-          retrievalConfig: {
-            latLng: {
-              latitude: userLocation.lat,
-              longitude: userLocation.lon
-            }
-          }
-        } : undefined
+        tools: [{ googleSearch: {} }]
       },
     });
     const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
@@ -165,7 +157,7 @@ export async function fetchLivePricing(materialName: string, settings: AppSettin
 
 export async function analyzeRemodelProject(imageBytes: string, projectType: string, tier: ProjectTier, budget: ThinkingBudget = 'Standard'): Promise<QuoteAnalysisResponse> {
   try {
-    const model = "gemini-3-pro-preview";
+    const model = "gemini-3.1-pro-preview";
     const response = await ai.models.generateContent({
       model: model,
       contents: { 
@@ -225,7 +217,7 @@ export async function analyzeRemodelProject(imageBytes: string, projectType: str
 
 export async function analyzeRemodelProjectFromText(specs: ProjectSpecs, tier: ProjectTier, budget: ThinkingBudget = 'Standard'): Promise<QuoteAnalysisResponse> {
   try {
-    const model = "gemini-3-pro-preview";
+    const model = "gemini-3.1-pro-preview";
     const response = await ai.models.generateContent({
       model: model,
       contents: `Perform architectural analysis for the following project: ${JSON.stringify(specs)}. Tier: ${tier}. Return JSON.`,
@@ -295,7 +287,7 @@ export async function simulateRemodel(beforeImage: string | null, blueprint: str
 
 export async function generateGrandmasterProposal(bid: Partial<BidData>, extraNotes: string, budget: ThinkingBudget = 'Standard'): Promise<string> {
   try {
-    const model = "gemini-3-pro-preview";
+    const model = "gemini-3.1-pro-preview";
     const response = await ai.models.generateContent({
       model: model,
       contents: `Draft a professional architectural bid proposal based on: ${JSON.stringify(bid)}. Extra context: ${extraNotes}. Tone: Authoritative yet accessible.`,

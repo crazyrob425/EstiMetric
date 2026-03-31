@@ -1,20 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LayoutDashboard, PlusCircle, Ruler, HardHat, Settings, HelpCircle, Activity, Globe, Database } from 'lucide-react';
+import { LayoutDashboard, PlusCircle, Ruler, HardHat, Settings, HelpCircle, Activity, Globe, Database, LogIn, LogOut, User as UserIcon } from 'lucide-react';
 import BidWizard from './components/BidWizard.tsx';
 import VirtualToolbox from './components/VirtualToolbox.tsx';
 import SettingsModal from './components/SettingsModal.tsx';
 import GrandMasterChat from './components/GrandMasterChat.tsx';
 import HelpMenu from './components/HelpMenu.tsx';
 import VaultProjectCard from './components/VaultProjectCard.tsx';
-import { BidData, AppSettings } from './types.ts';
+import { BidData, AppSettings, UserProfile } from './types.ts';
+import { auth, db, signInWithPopup, googleProvider, signOut, onAuthStateChanged, doc, getDoc, setDoc, updateDoc, collection, onSnapshot, query, handleFirestoreError, OperationType } from './firebase.ts';
+import { User } from 'firebase/auth';
+import { getDocFromServer } from 'firebase/firestore';
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'vault' | 'toolbox' | 'foreman' | 'new'>('vault');
+  const [activeTab, setActiveTab] = useState<'home' | 'vault' | 'toolbox' | 'foreman' | 'new'>('home');
   const [bids, setBids] = useState<BidData[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [userLocation, setUserLocation] = useState<{lat: number, lon: number} | null>(null);
+  
+  const [user, setUser] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
 
   const [settings, setSettings] = useState<AppSettings>({
     cameraCountdown: 3,
@@ -36,14 +43,99 @@ const App: React.FC = () => {
   });
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('estimetric_bids');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) setBids(parsed);
+    async function testConnection() {
+      try {
+        await getDocFromServer(doc(db, 'test', 'connection'));
+      } catch (error) {
+        if(error instanceof Error && error.message.includes('the client is offline')) {
+          console.error("Please check your Firebase configuration. ");
+        }
       }
-    } catch(e) { console.warn("Vault load error"); }
-    
+    }
+    testConnection();
+
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        try {
+          const userRef = doc(db, 'users', currentUser.uid);
+          const userSnap = await getDoc(userRef);
+          if (!userSnap.exists()) {
+            const newProfile: UserProfile = {
+              uid: currentUser.uid,
+              email: currentUser.email || '',
+              displayName: currentUser.displayName || '',
+              photoURL: currentUser.photoURL || '',
+              membershipTier: 'Free',
+              isBeta: true,
+              createdAt: new Date().toISOString()
+            };
+            await setDoc(userRef, newProfile);
+            setUserProfile(newProfile);
+          } else {
+            setUserProfile(userSnap.data() as UserProfile);
+          }
+        } catch (error) {
+          handleFirestoreError(error, OperationType.GET, `users/${currentUser.uid}`);
+        }
+      } else {
+        setUserProfile(null);
+      }
+      setIsAuthReady(true);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthReady) return;
+
+    if (user) {
+      // Sync Settings
+      const settingsRef = doc(db, `users/${user.uid}/settings/preferences`);
+      const unsubSettings = onSnapshot(settingsRef, (docSnap) => {
+        if (docSnap.exists()) {
+          setSettings(docSnap.data() as AppSettings);
+        }
+      }, (error) => {
+        handleFirestoreError(error, OperationType.GET, `users/${user.uid}/settings/preferences`);
+      });
+
+      // Sync Bids
+      const bidsRef = collection(db, `users/${user.uid}/bids`);
+      const q = query(bidsRef);
+      const unsubBids = onSnapshot(q, (snapshot) => {
+        const fetchedBids: BidData[] = [];
+        snapshot.forEach((doc) => {
+          fetchedBids.push(doc.data() as BidData);
+        });
+        // Sort by date descending
+        fetchedBids.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        setBids(fetchedBids);
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, `users/${user.uid}/bids`);
+      });
+
+      return () => {
+        unsubSettings();
+        unsubBids();
+      };
+    } else {
+      // Fallback to local storage if not logged in
+      try {
+        const saved = localStorage.getItem('estimetric_bids');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) setBids(parsed);
+        }
+        const savedSettings = localStorage.getItem('estimetric_settings');
+        if (savedSettings) {
+          setSettings(JSON.parse(savedSettings));
+        }
+      } catch(e) { console.warn("Local load error"); }
+    }
+  }, [user, isAuthReady]);
+
+  useEffect(() => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => setUserLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
@@ -52,11 +144,63 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const handleComplete = (newBid: BidData) => {
-    const updated = [newBid, ...bids];
-    setBids(updated);
-    localStorage.setItem('estimetric_bids', JSON.stringify(updated));
+  const handleComplete = async (newBid: BidData) => {
+    if (user) {
+      try {
+        const bidRef = doc(db, `users/${user.uid}/bids`, newBid.id);
+        await setDoc(bidRef, newBid);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.CREATE, `users/${user.uid}/bids/${newBid.id}`);
+      }
+    } else {
+      const updated = [newBid, ...bids];
+      setBids(updated);
+      localStorage.setItem('estimetric_bids', JSON.stringify(updated));
+    }
     setActiveTab('vault');
+  };
+
+  const handleSaveSettings = async (newSettings: AppSettings) => {
+    setSettings(newSettings);
+    if (user) {
+      try {
+        const settingsRef = doc(db, `users/${user.uid}/settings/preferences`);
+        await setDoc(settingsRef, newSettings);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}/settings/preferences`);
+      }
+    } else {
+      localStorage.setItem('estimetric_settings', JSON.stringify(newSettings));
+    }
+    setShowSettings(false);
+  };
+
+  const handleSaveProfile = async (newProfile: UserProfile) => {
+    setUserProfile(newProfile);
+    if (user) {
+      try {
+        const userRef = doc(db, 'users', user.uid);
+        await updateDoc(userRef, { membershipTier: newProfile.membershipTier });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+      }
+    }
+  };
+
+  const handleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error) {
+      console.error("Login failed", error);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error("Logout failed", error);
+    }
   };
 
   return (
@@ -84,16 +228,34 @@ const App: React.FC = () => {
 
         <div className="flex items-center gap-6">
           <div className="hidden md:flex items-center gap-8 px-6 py-2 bg-white/5 rounded-full border border-white/5">
+            {userProfile && (
+              <div className="flex items-center gap-2">
+                <UserIcon size={12} className="text-purple-400" />
+                <span className="text-[10px] font-bold text-slate-400 uppercase">
+                  Tier: <span className="text-purple-400">{userProfile.membershipTier}</span>
+                  {userProfile.isBeta && <span className="ml-1 text-emerald-400">(Beta Free)</span>}
+                </span>
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <Activity size={12} className="text-emerald-500" />
               <span className="text-[10px] font-bold text-slate-400 uppercase">GMSA Optimal</span>
             </div>
             <div className="flex items-center gap-2">
-              <Globe size={12} className="text-blue-400" />
-              <span className="text-[10px] font-bold text-slate-400 uppercase">Cloud Sync Active</span>
+              <Globe size={12} className={user ? "text-blue-400" : "text-slate-600"} />
+              <span className="text-[10px] font-bold text-slate-400 uppercase">{user ? "Cloud Sync Active" : "Local Mode"}</span>
             </div>
           </div>
           <div className="flex gap-2">
+            {user ? (
+              <button onClick={handleLogout} className="p-2.5 hover:bg-white/5 rounded-lg text-slate-400 transition-colors" title="Sign Out">
+                <LogOut size={20} />
+              </button>
+            ) : (
+              <button onClick={handleLogin} className="p-2.5 hover:bg-white/5 rounded-lg text-blue-400 transition-colors" title="Sign In with Google">
+                <LogIn size={20} />
+              </button>
+            )}
             <button onClick={() => setShowHelp(true)} className="p-2.5 hover:bg-white/5 rounded-lg text-slate-400 transition-colors">
               <HelpCircle size={20} />
             </button>
@@ -108,6 +270,87 @@ const App: React.FC = () => {
       <main className="flex-1 overflow-y-auto custom-scrollbar relative z-10 p-8">
         <div className="max-w-7xl mx-auto">
           <AnimatePresence mode="wait">
+            {activeTab === 'home' && (
+              <motion.div 
+                key="home"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="space-y-8 flex flex-col items-center justify-center min-h-[70vh]"
+              >
+                <div className="text-center space-y-4 mb-8">
+                  <h2 className="text-4xl md:text-5xl font-black uppercase tracking-widest text-white">EstiMetric</h2>
+                  <p className="text-slate-400 font-bold tracking-widest uppercase text-sm">Select an operation to begin</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl">
+                  <button 
+                    onClick={() => setActiveTab('new')}
+                    className="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-blue-600 to-indigo-700 p-8 text-left transition-all hover:scale-[1.02] hover:shadow-[0_0_40px_rgba(59,130,246,0.4)]"
+                  >
+                    <div className="absolute top-0 right-0 p-8 opacity-20 transition-transform group-hover:scale-110 group-hover:opacity-30">
+                      <PlusCircle size={120} />
+                    </div>
+                    <div className="relative z-10">
+                      <div className="mb-4 inline-flex rounded-xl bg-white/20 p-4 backdrop-blur-md">
+                        <PlusCircle size={32} className="text-white" />
+                      </div>
+                      <h3 className="mb-2 text-2xl font-black uppercase tracking-widest text-white">Start New Bid</h3>
+                      <p className="text-sm font-bold tracking-widest text-blue-100 uppercase opacity-80">Initiate a new project survey and takeoff</p>
+                    </div>
+                  </button>
+
+                  <button 
+                    onClick={() => setActiveTab('vault')}
+                    className="group relative overflow-hidden rounded-3xl bg-slate-800 p-8 text-left transition-all hover:scale-[1.02] hover:bg-slate-700 border border-white/5"
+                  >
+                    <div className="absolute top-0 right-0 p-8 opacity-5 transition-transform group-hover:scale-110 group-hover:opacity-10">
+                      <Database size={120} />
+                    </div>
+                    <div className="relative z-10">
+                      <div className="mb-4 inline-flex rounded-xl bg-white/5 p-4">
+                        <Database size={32} className="text-blue-400" />
+                      </div>
+                      <h3 className="mb-2 text-2xl font-black uppercase tracking-widest text-white">Project Vault</h3>
+                      <p className="text-sm font-bold tracking-widest text-slate-400 uppercase">Access saved bids and historical data</p>
+                    </div>
+                  </button>
+
+                  <button 
+                    onClick={() => setActiveTab('toolbox')}
+                    className="group relative overflow-hidden rounded-3xl bg-slate-800 p-8 text-left transition-all hover:scale-[1.02] hover:bg-slate-700 border border-white/5"
+                  >
+                    <div className="absolute top-0 right-0 p-8 opacity-5 transition-transform group-hover:scale-110 group-hover:opacity-10">
+                      <Ruler size={120} />
+                    </div>
+                    <div className="relative z-10">
+                      <div className="mb-4 inline-flex rounded-xl bg-white/5 p-4">
+                        <Ruler size={32} className="text-emerald-400" />
+                      </div>
+                      <h3 className="mb-2 text-2xl font-black uppercase tracking-widest text-white">Virtual Tools</h3>
+                      <p className="text-sm font-bold tracking-widest text-slate-400 uppercase">AR measurement and site analysis</p>
+                    </div>
+                  </button>
+
+                  <button 
+                    onClick={() => setActiveTab('foreman')}
+                    className="group relative overflow-hidden rounded-3xl bg-slate-800 p-8 text-left transition-all hover:scale-[1.02] hover:bg-slate-700 border border-white/5"
+                  >
+                    <div className="absolute top-0 right-0 p-8 opacity-5 transition-transform group-hover:scale-110 group-hover:opacity-10">
+                      <HardHat size={120} />
+                    </div>
+                    <div className="relative z-10">
+                      <div className="mb-4 inline-flex rounded-xl bg-white/5 p-4">
+                        <HardHat size={32} className="text-orange-400" />
+                      </div>
+                      <h3 className="mb-2 text-2xl font-black uppercase tracking-widest text-white">The Foreman</h3>
+                      <p className="text-sm font-bold tracking-widest text-slate-400 uppercase">Consult AI for technical guidance</p>
+                    </div>
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
             {activeTab === 'vault' && (
               <motion.div 
                 key="vault"
@@ -180,9 +423,15 @@ const App: React.FC = () => {
       <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[100]">
         <nav className="flex items-center gap-1.5 p-1.5 bg-slate-900/80 backdrop-blur-2xl border border-white/10 rounded-[2rem] luxury-shadow">
           <NavButton 
+            active={activeTab === 'home'} 
+            onClick={() => setActiveTab('home')} 
+            icon={<LayoutDashboard size={18} />} 
+            label="Home" 
+          />
+          <NavButton 
             active={activeTab === 'vault'} 
             onClick={() => setActiveTab('vault')} 
-            icon={<LayoutDashboard size={18} />} 
+            icon={<Database size={18} />} 
             label="Vault" 
           />
           <NavButton 
@@ -206,7 +455,7 @@ const App: React.FC = () => {
         </nav>
       </div>
 
-      {showSettings && <SettingsModal settings={settings} onSave={setSettings} onClose={() => setShowSettings(false)} />}
+      {showSettings && <SettingsModal settings={settings} userProfile={userProfile} onSave={handleSaveSettings} onSaveProfile={handleSaveProfile} onClose={() => setShowSettings(false)} />}
       {showHelp && <HelpMenu onClose={() => setShowHelp(false)} />}
     </div>
   );

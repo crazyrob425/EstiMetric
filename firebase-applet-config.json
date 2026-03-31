@@ -1,0 +1,10 @@
+{
+  "projectId": "cardcaller",
+  "appId": "1:1089696759796:web:ae415325c878f8a77a83a1",
+  "apiKey": "AIzaSyD2thPgzjaeB50HbeYXwgRZIdBe-G8qRyk",
+  "authDomain": "cardcaller.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-0768130c-ddd0-4577-aa7b-d234981af8db",
+  "storageBucket": "cardcaller.firebasestorage.app",
+  "messagingSenderId": "1089696759796",
+  "measurementId": ""
+}

@@ -2,7 +2,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { INITIAL_MANIFEST } from "./nexusManifest.ts";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export interface NexusManifest {
   version: string;

@@ -1,16 +1,26 @@
 import React, { useState } from 'react';
 import MetallicPanel from './MetallicPanel.tsx';
-import { AppSettings } from '../types.ts';
+import { AppSettings, UserProfile } from '../types.ts';
 
 interface SettingsModalProps {
   settings: AppSettings;
+  userProfile?: UserProfile | null;
   onSave: (newSettings: AppSettings) => void;
+  onSaveProfile?: (newProfile: UserProfile) => void;
   onClose: () => void;
 }
 
-const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSave, onClose }) => {
+const SettingsModal: React.FC<SettingsModalProps> = ({ settings, userProfile, onSave, onSaveProfile, onClose }) => {
   const [localSettings, setLocalSettings] = useState<AppSettings>(settings);
-  const handleSave = () => { onSave(localSettings); onClose(); };
+  const [localProfile, setLocalProfile] = useState<UserProfile | null>(userProfile || null);
+
+  const handleSave = () => { 
+    onSave(localSettings); 
+    if (localProfile && onSaveProfile) {
+      onSaveProfile(localProfile);
+    }
+    onClose(); 
+  };
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fadeIn">
@@ -18,6 +28,26 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onSave, onClose
         <button onClick={onClose} className="absolute top-8 right-8 text-slate-400 hover:text-red-500 text-xl font-bold z-10 transition-colors">✕</button>
         <div className="flex-1 overflow-y-auto space-y-8 custom-scrollbar pb-8 mt-4 pr-2">
             
+            {localProfile && (
+              <div className="space-y-4">
+                  <div className="flex justify-between items-center border-b border-white/10 pb-2">
+                    <h3 className="text-xs font-black text-purple-500 uppercase tracking-widest">Membership Tier</h3>
+                    <span className="text-[10px] font-bold text-emerald-400 uppercase bg-emerald-500/10 px-2 py-1 rounded-full">Beta Release: All Tiers Free</span>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {['Free', 'Pro', 'Elite', 'Enterprise'].map(tier => (
+                        <button 
+                          key={tier} 
+                          onClick={() => setLocalProfile(p => p ? {...p, membershipTier: tier as any} : p)} 
+                          className={`p-4 rounded-xl border-2 font-black text-[10px] uppercase tracking-widest transition-all ${localProfile.membershipTier === tier ? 'bg-purple-600 text-white border-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.3)]' : 'bg-white/5 text-slate-400 border-white/5 hover:border-white/10'}`}
+                        >
+                          {tier}
+                        </button>
+                      ))}
+                  </div>
+              </div>
+            )}
+
             <div className="space-y-4">
                 <h3 className="text-xs font-black text-blue-600 uppercase tracking-widest border-b border-white/10 pb-2">Vocal Tone Profile</h3>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
