@@ -69,6 +69,9 @@ export interface BidData {
   spatialProfile?: SpatialData;
   customerRequests?: string[];
   structuralRisks?: string[];
+  summary?: string;
+  proposalLetter?: string;
+  markupPercent?: number;
 }
 
 export interface QuoteAnalysisResponse {

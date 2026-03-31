@@ -3,6 +3,7 @@ import MetallicPanel from './MetallicPanel.tsx';
 import { runForemanGraph } from '../services/aiOrchestrator.ts';
 import { speakText } from '../services/geminiService.ts';
 import { nexus } from '../services/nexusProtocol.ts';
+import { toast } from 'react-hot-toast';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -14,14 +15,34 @@ interface Message {
 
 const WAKE_PHRASE = "AUTH_LEVEL_DESIGN_LEAD_206425";
 const SLEEP_PHRASE = "AUTH_LEVEL_FOREMAN_STABLE_425206";
+const CHAT_HISTORY_KEY = 'estimetric_chat_history';
+const MAX_STORED_MESSAGES = 100;
 
 const GrandMasterChat: React.FC<{ onClose: () => void, initialContext?: any, onCommand?: any }> = ({ onClose, initialContext, onCommand }) => {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    try {
+      const saved = localStorage.getItem(CHAT_HISTORY_KEY);
+      if (saved) {
+        const parsed: Message[] = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch { /* ignore */ }
+    return [];
+  });
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [synergy, setSynergy] = useState(0.5);
   const [isAwake, setIsAwake] = useState(() => localStorage.getItem('muse_awake') === 'true');
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Persist chat history whenever messages change
+  useEffect(() => {
+    if (messages.length === 0) return;
+    try {
+      const toStore = messages.slice(-MAX_STORED_MESSAGES);
+      localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(toStore));
+    } catch { /* quota exceeded — ignore */ }
+  }, [messages]);
 
   useEffect(() => {
     if (messages.length === 0) {
@@ -108,6 +129,20 @@ const GrandMasterChat: React.FC<{ onClose: () => void, initialContext?: any, onC
             <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">
               {isAwake ? `Sync Level: ${Math.round(synergy * 100)}%` : "Sys. Status: Nominal"}
             </span>
+            {messages.length > 1 && (
+              <button
+                onClick={() => {
+                  if (confirm('Clear chat history?')) {
+                    localStorage.removeItem(CHAT_HISTORY_KEY);
+                    setMessages([{ role: 'assistant', content: isAwake ? 'History cleared. Design Lead ready.' : 'History cleared. Foreman standing by.' }]);
+                    toast.success('Chat history cleared');
+                  }
+                }}
+                className="ml-2 text-[8px] font-black text-slate-500/50 hover:text-red-400 uppercase tracking-widest transition-colors"
+              >
+                Clear
+              </button>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6" ref={scrollRef}>
