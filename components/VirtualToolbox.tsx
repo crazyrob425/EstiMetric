@@ -5,7 +5,7 @@ import { analyzeSurfaceThermal } from '../services/geminiService.ts';
 
 declare const cv: any; // OpenCV.js
 
-type ToolType = 'spatial' | 'color' | 'magneto' | 'lux' | 'thermal' | 'acoustic' | 'seismic';
+export type ToolType = 'spatial' | 'color' | 'magneto' | 'lux' | 'thermal' | 'acoustic' | 'seismic';
 
 interface Point { x: number; y: number; }
 interface Measurement { start: Point; end: Point; distance: number; }
@@ -14,10 +14,11 @@ interface VirtualToolboxProps {
   onClose: () => void;
   settings: AppSettings;
   userLocation?: { lat: number, lon: number } | null;
+  initialTool?: ToolType;
 }
 
-const VirtualToolbox: React.FC<VirtualToolboxProps> = ({ onClose, settings, userLocation }) => {
-  const [activeTool, setActiveTool] = useState<ToolType>('spatial');
+const VirtualToolbox: React.FC<VirtualToolboxProps> = ({ onClose, settings, userLocation, initialTool }) => {
+  const [activeTool, setActiveTool] = useState<ToolType>(initialTool ?? 'spatial');
   const [sensorPermission, setSensorPermission] = useState<'prompt' | 'granted' | 'denied'>('prompt');
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
