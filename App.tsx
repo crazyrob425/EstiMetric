@@ -7,6 +7,9 @@ import SettingsModal from './components/SettingsModal.tsx';
 import GrandMasterChat from './components/GrandMasterChat.tsx';
 import HelpMenu from './components/HelpMenu.tsx';
 import VaultProjectCard from './components/VaultProjectCard.tsx';
+import StickyForeman from './components/StickyForeman.tsx';
+import ToolboxHub from './components/ToolboxHub.tsx';
+import { AppWatchdogProvider } from './contexts/AppWatchdogContext.tsx';
 import { BidData, AppSettings, UserProfile } from './types.ts';
 import { auth, db, signInWithPopup, googleProvider, signOut, onAuthStateChanged, doc, getDoc, setDoc, updateDoc, collection, onSnapshot, query, handleFirestoreError, OperationType } from './firebase.ts';
 import { User } from 'firebase/auth';
@@ -17,6 +20,7 @@ const App: React.FC = () => {
   const [bids, setBids] = useState<BidData[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showForemanChat, setShowForemanChat] = useState(false);
   const [userLocation, setUserLocation] = useState<{lat: number, lon: number} | null>(null);
   
   const [user, setUser] = useState<User | null>(null);
@@ -203,7 +207,17 @@ const App: React.FC = () => {
     }
   };
 
+  // Watchdog admin-level settings patch handler
+  const handleSettingsPatch = (patch: Partial<AppSettings>) => {
+    handleSaveSettings({ ...settings, ...patch });
+  };
+
   return (
+    <AppWatchdogProvider
+      currentSection={activeTab}
+      onNavigate={(section) => setActiveTab(section)}
+      onSettingsPatch={handleSettingsPatch}
+    >
     <div className="h-screen w-screen flex flex-col overflow-hidden bg-[#020617] text-slate-100">
       {/* Dynamic Background Elements */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
@@ -410,9 +424,23 @@ const App: React.FC = () => {
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 20 }}
-                className="max-w-3xl mx-auto"
+                className="max-w-3xl mx-auto flex flex-col items-center justify-center min-h-[60vh] gap-6"
               >
-                <GrandMasterChat onClose={() => setActiveTab('vault')} initialContext={{ settings }} />
+                <div className="text-center space-y-3">
+                  <div className="w-20 h-20 rounded-full bg-yellow-400/15 flex items-center justify-center mx-auto">
+                    <HardHat size={40} className="text-yellow-400" />
+                  </div>
+                  <h2 className="text-2xl font-black uppercase tracking-widest text-white">The Foreman</h2>
+                  <p className="text-slate-400 font-bold tracking-widest uppercase text-sm max-w-sm">
+                    Your AI construction assistant is watching over the app. Tap below to open a conversation.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowForemanChat(true)}
+                  className="px-10 py-4 rounded-2xl bg-yellow-400 text-slate-900 font-black uppercase tracking-widest text-sm shadow-lg hover:bg-yellow-300 transition-colors active:scale-95"
+                >
+                  Open Foreman Chat
+                </button>
               </motion.div>
             )}
           </AnimatePresence>
@@ -457,7 +485,25 @@ const App: React.FC = () => {
 
       {showSettings && <SettingsModal settings={settings} userProfile={userProfile} onSave={handleSaveSettings} onSaveProfile={handleSaveProfile} onClose={() => setShowSettings(false)} />}
       {showHelp && <HelpMenu onClose={() => setShowHelp(false)} />}
+
+      {/* Floating Foreman Watchdog – always visible */}
+      <StickyForeman
+        onOpenChat={() => setShowForemanChat(true)}
+        onNavigate={(section) => setActiveTab(section)}
+      />
+
+      {/* Floating ToolboxHub – always accessible from bottom-left */}
+      <ToolboxHub onNavigate={(section) => setActiveTab(section)} />
+
+      {/* Foreman Chat Overlay – triggered by StickyForeman */}
+      {showForemanChat && (
+        <GrandMasterChat
+          onClose={() => setShowForemanChat(false)}
+          initialContext={{ settings }}
+        />
+      )}
     </div>
+    </AppWatchdogProvider>
   );
 };
 
