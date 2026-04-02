@@ -1,290 +1,219 @@
 /**
  * ForemanWatchdog.ts
- * System-level monitoring engine for the EstiMetric Foreman AI.
- * Watches user behavior, app errors, and data consistency in real time.
+ * System-level watchdog service that monitors app state, user behavior,
+ * form errors, performance, and self-heals recoverable issues.
  */
+import { WatchdogSuggestion, WatchdogSensitivity } from '../types/watchdog.ts';
 
-export type AlertLevel = 'tip' | 'warning' | 'critical';
-export type AppSection = 'home' | 'vault' | 'new' | 'toolbox' | 'foreman';
+type SuggestionHandler = (s: Omit<WatchdogSuggestion, 'id' | 'timestamp' | 'dismissed'>) => void;
 
-export interface WatchdogAlert {
-  id: string;
-  level: AlertLevel;
-  title: string;
-  message: string;
-  action?: string;
-  targetTab?: AppSection;
-  timestamp: number;
-  dismissed?: boolean;
-}
+const SENSITIVITY_THRESHOLDS: Record<WatchdogSensitivity, number> = {
+  off: Infinity,
+  low: 3,
+  medium: 2,
+  high: 1,
+};
 
-export interface TaskMemory {
-  id: string;
-  section: AppSection;
-  action: string;
-  details: Record<string, unknown>;
-  timestamp: number;
-  outcome?: 'success' | 'error' | 'abandoned';
-  notes?: string;
-}
+class ForemanWatchdogService {
+  private sensitivity: WatchdogSensitivity = 'medium';
+  private addSuggestion: SuggestionHandler | null = null;
+  private consoleErrorCount = 0;
+  private originalConsoleError: typeof console.error;
+  private originalConsoleWarn: typeof console.warn;
+  private unhandledRejectionHandler: ((e: PromiseRejectionEvent) => void) | null = null;
+  private globalErrorHandler: ((e: ErrorEvent) => void) | null = null;
+  private monitorInterval: ReturnType<typeof setInterval> | null = null;
+  private formErrorCounts: Record<string, number> = {};
+  private slowApiThresholdMs = 4000;
 
-export interface BehaviorEvent {
-  type: 'nav' | 'form_start' | 'form_abandon' | 'submit' | 'error' | 'idle' | 'action';
-  section: AppSection;
-  detail?: string;
-  timestamp: number;
-}
-
-const STORAGE_KEY_MEMORIES = 'foreman_task_memories';
-const STORAGE_KEY_EVENTS   = 'foreman_behavior_events';
-const MAX_EVENTS = 200;
-const MAX_MEMORIES = 100;
-const IDLE_THRESHOLD_MS = 45_000;
-
-// ─── Persistence helpers ───────────────────────────────────────────────────────
-
-function loadMemories(): TaskMemory[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_MEMORIES);
-    return raw ? (JSON.parse(raw) as TaskMemory[]) : [];
-  } catch { return []; }
-}
-
-function saveMemories(memories: TaskMemory[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY_MEMORIES, JSON.stringify(memories.slice(-MAX_MEMORIES)));
-  } catch { /* storage full */ }
-}
-
-function loadEvents(): BehaviorEvent[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_EVENTS);
-    return raw ? (JSON.parse(raw) as BehaviorEvent[]) : [];
-  } catch { return []; }
-}
-
-function saveEvents(events: BehaviorEvent[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY_EVENTS, JSON.stringify(events.slice(-MAX_EVENTS)));
-  } catch { /* storage full */ }
-}
-
-// ─── Core watchdog class ───────────────────────────────────────────────────────
-
-type AlertCallback = (alert: WatchdogAlert) => void;
-
-class ForemanWatchdogEngine {
-  private events: BehaviorEvent[] = loadEvents();
-  private memories: TaskMemory[] = loadMemories();
-  private listeners: AlertCallback[] = [];
-  private idleTimer: ReturnType<typeof setTimeout> | null = null;
-  private currentSection: AppSection = 'home';
-  private sessionStart = Date.now();
-  private formStarted = false;
-  private errorCount = 0;
-
-  // ── Global error hooks ──────────────────────────────────────────────────────
-  install(): void {
-    window.addEventListener('error', this.handleWindowError);
-    window.addEventListener('unhandledrejection', this.handleUnhandledRejection);
-    this.resetIdleTimer();
-    ['click', 'keydown', 'scroll', 'touchstart'].forEach(evt =>
-      window.addEventListener(evt, this.resetIdleTimer, { passive: true })
-    );
+  constructor() {
+    this.originalConsoleError = console.error.bind(console);
+    this.originalConsoleWarn = console.warn.bind(console);
   }
 
-  uninstall(): void {
-    window.removeEventListener('error', this.handleWindowError);
-    window.removeEventListener('unhandledrejection', this.handleUnhandledRejection);
-    if (this.idleTimer) clearTimeout(this.idleTimer);
-    ['click', 'keydown', 'scroll', 'touchstart'].forEach(evt =>
-      window.removeEventListener(evt, this.resetIdleTimer)
-    );
+  init(handler: SuggestionHandler, sensitivity: WatchdogSensitivity) {
+    this.addSuggestion = handler;
+    this.sensitivity = sensitivity;
+    if (sensitivity === 'off') return;
+    this._hookConsole();
+    this._hookGlobalErrors();
+    this._startPeriodicChecks();
   }
 
-  // ── Public API ──────────────────────────────────────────────────────────────
-
-  onAlert(cb: AlertCallback): () => void {
-    this.listeners.push(cb);
-    return () => { this.listeners = this.listeners.filter(l => l !== cb); };
+  updateSensitivity(s: WatchdogSensitivity) {
+    this.sensitivity = s;
+    if (s === 'off') {
+      this._unhook();
+    } else if (!this.monitorInterval) {
+      this._hookConsole();
+      this._hookGlobalErrors();
+      this._startPeriodicChecks();
+    }
   }
 
-  recordNavigation(section: AppSection): void {
-    this.currentSection = section;
-    this.formStarted = false;
-    this.addEvent({ type: 'nav', section, timestamp: Date.now() });
-    this.analyseNavPattern();
+  destroy() {
+    this._unhook();
   }
 
-  recordFormStart(section: AppSection): void {
-    this.formStarted = true;
-    this.addEvent({ type: 'form_start', section, timestamp: Date.now() });
-  }
+  // ── Public API for external reporters ──────────────────────────────────────
 
-  recordFormAbandon(section: AppSection): void {
-    if (this.formStarted) {
-      this.addEvent({ type: 'form_abandon', section, timestamp: Date.now() });
-      this.formStarted = false;
-      this.emit({
-        id: `abandon-${Date.now()}`,
-        level: 'tip',
-        title: 'Unfinished bid detected',
-        message: 'You left the bid wizard before completing it. Tap here to resume or start a new one.',
-        action: 'Resume Bid',
-        targetTab: 'new',
-        timestamp: Date.now()
+  reportFormError(fieldId: string, message: string) {
+    if (this.sensitivity === 'off') return;
+    this.formErrorCounts[fieldId] = (this.formErrorCounts[fieldId] ?? 0) + 1;
+    const count = this.formErrorCounts[fieldId];
+    const threshold = SENSITIVITY_THRESHOLDS[this.sensitivity];
+    if (count >= threshold) {
+      this._emit({
+        severity: 'warning',
+        category: 'form_validation',
+        title: 'Repeated Form Error',
+        message: `I've noticed ${count} repeated errors on "${fieldId}": ${message}. Would you like help filling this in?`,
+        actionLabel: 'Get Help',
+        autoHealable: false,
       });
     }
   }
 
-  recordSubmit(section: AppSection, detail?: string): void {
-    this.formStarted = false;
-    this.addEvent({ type: 'submit', section, detail, timestamp: Date.now() });
-    this.storeMemory({
-      id: `mem-${Date.now()}`,
-      section,
-      action: 'submit',
-      details: { detail },
-      timestamp: Date.now(),
-      outcome: 'success'
+  reportSlowOperation(label: string, durationMs: number) {
+    if (this.sensitivity === 'off' || durationMs < this.slowApiThresholdMs) return;
+    this._emit({
+      severity: 'warning',
+      category: 'performance',
+      title: 'Slow Operation Detected',
+      message: `"${label}" took ${(durationMs / 1000).toFixed(1)}s — that's slower than usual. Try refreshing or checking your connection.`,
+      actionLabel: 'Refresh',
+      action: () => window.location.reload(),
+      autoHealable: true,
     });
   }
 
-  recordError(section: AppSection, detail: string): void {
-    this.errorCount++;
-    this.addEvent({ type: 'error', section, detail, timestamp: Date.now() });
-    if (this.errorCount >= 3) {
-      this.emit({
-        id: `errors-${Date.now()}`,
-        level: 'critical',
-        title: 'Recurring errors detected',
-        message: `The Foreman has noticed ${this.errorCount} errors in this session. Ask for help to diagnose the issue.`,
-        action: 'Ask Foreman',
-        targetTab: 'foreman',
-        timestamp: Date.now()
-      });
-      this.errorCount = 0;
-    }
-  }
-
-  recordAction(section: AppSection, detail: string): void {
-    this.addEvent({ type: 'action', section, detail, timestamp: Date.now() });
-  }
-
-  storeMemory(memory: TaskMemory): void {
-    this.memories = [...this.memories, memory];
-    saveMemories(this.memories);
-  }
-
-  recallSimilarMemories(section: AppSection, limit = 5): TaskMemory[] {
-    return this.memories
-      .filter(m => m.section === section)
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .slice(0, limit);
-  }
-
-  getAllMemories(): TaskMemory[] {
-    return [...this.memories];
-  }
-
-  clearMemories(): void {
-    this.memories = [];
-    saveMemories([]);
-  }
-
-  getRecentEvents(limit = 20): BehaviorEvent[] {
-    return this.events.slice(-limit);
-  }
-
-  // ── Private helpers ─────────────────────────────────────────────────────────
-
-  private addEvent(event: BehaviorEvent): void {
-    this.events = [...this.events, event];
-    saveEvents(this.events);
-  }
-
-  private emit(alert: WatchdogAlert): void {
-    this.listeners.forEach(l => l(alert));
-  }
-
-  private analyseNavPattern(): void {
-    const recent = this.events.filter(e => e.type === 'nav').slice(-6);
-    if (recent.length < 4) return;
-
-    // Detect rapid back-and-forth (confused user)
-    const sections = recent.map(e => e.section);
-    const bounces = sections.filter((s, i) => i > 0 && s === sections[i - 2]).length;
-    if (bounces >= 2) {
-      this.emit({
-        id: `nav-bounce-${Date.now()}`,
-        level: 'tip',
-        title: 'Looks like you need help navigating',
-        message: "The Foreman noticed you've been jumping between sections. Would you like a guided tour of the app?",
-        action: 'Open Foreman',
-        targetTab: 'foreman',
-        timestamp: Date.now()
-      });
-    }
-
-    // No vault visits after several bids submitted → remind user to review
-    const submits = this.events.filter(e => e.type === 'submit' && e.section === 'new').length;
-    const vaultVisits = this.events.filter(e => e.type === 'nav' && e.section === 'vault').length;
-    if (submits > 0 && vaultVisits === 0) {
-      this.emit({
-        id: `vault-remind-${Date.now()}`,
-        level: 'tip',
-        title: 'Check your Project Vault',
-        message: "You've completed a bid but haven't visited the Vault yet. Your work is saved there.",
-        action: 'Go to Vault',
-        targetTab: 'vault',
-        timestamp: Date.now()
-      });
-    }
-  }
-
-  private handleWindowError = (event: ErrorEvent): void => {
-    const section = this.currentSection;
-    this.recordError(section, event.message || 'Unknown JS error');
-    if (event.message && !event.message.toLowerCase().includes('script error')) {
-      this.emit({
-        id: `jserr-${Date.now()}`,
-        level: 'warning',
-        title: 'App error detected',
-        message: `The Foreman caught an unexpected error: "${event.message.slice(0, 80)}". Monitoring for stability.`,
-        timestamp: Date.now()
-      });
-    }
-  };
-
-  private handleUnhandledRejection = (event: PromiseRejectionEvent): void => {
-    const msg = event.reason instanceof Error ? event.reason.message : String(event.reason ?? 'Unknown promise rejection');
-    this.recordError(this.currentSection, msg);
-    this.emit({
-      id: `rejection-${Date.now()}`,
-      level: 'warning',
-      title: 'Network or async error',
-      message: `A background operation failed: "${msg.slice(0, 80)}". The Foreman is monitoring.`,
-      timestamp: Date.now()
+  reportDataInconsistency(description: string) {
+    if (this.sensitivity === 'off') return;
+    this._emit({
+      severity: 'error',
+      category: 'data_inconsistency',
+      title: 'Data Sync Issue',
+      message: description,
+      actionLabel: 'Auto-Fix',
+      autoHealable: true,
     });
-  };
+  }
 
-  private resetIdleTimer = (): void => {
-    if (this.idleTimer) clearTimeout(this.idleTimer);
-    this.idleTimer = setTimeout(() => {
-      const sessionMinutes = Math.round((Date.now() - this.sessionStart) / 60_000);
-      this.emit({
-        id: `idle-${Date.now()}`,
-        level: 'tip',
-        title: "Still here?",
-        message: `You've been on the ${this.currentSection} screen for a while. Need help with anything? Tap the Foreman.`,
-        action: 'Open Foreman',
-        targetTab: 'foreman',
-        timestamp: Date.now()
+  reportCommonMistake(title: string, message: string, autoHealable = false) {
+    if (this.sensitivity === 'off') return;
+    this._emit({ severity: 'tip', category: 'common_mistake', title, message, autoHealable });
+  }
+
+  reportBehaviorPattern(title: string, message: string) {
+    if (this.sensitivity === 'off') return;
+    this._emit({ severity: 'info', category: 'user_behavior', title, message, autoHealable: false });
+  }
+
+  // ── Private helpers ────────────────────────────────────────────────────────
+
+  private _emit(s: Omit<WatchdogSuggestion, 'id' | 'timestamp' | 'dismissed'>) {
+    if (this.sensitivity === 'off' || !this.addSuggestion) return;
+    this.addSuggestion(s);
+  }
+
+  private _hookConsole() {
+    // Intercept console.error for real-time monitoring
+    console.error = (...args: unknown[]) => {
+      this.originalConsoleError(...args);
+      this.consoleErrorCount++;
+      if (this.consoleErrorCount % 3 === 0) {
+        this._emit({
+          severity: 'error',
+          category: 'app_state',
+          title: 'Repeated App Errors',
+          message: `I've detected ${this.consoleErrorCount} console errors this session. This may indicate an underlying issue. Consider refreshing.`,
+          actionLabel: 'Refresh App',
+          action: () => window.location.reload(),
+          autoHealable: true,
+        });
+      }
+    };
+  }
+
+  private _hookGlobalErrors() {
+    this.unhandledRejectionHandler = (e: PromiseRejectionEvent) => {
+      if (this.sensitivity === 'off') return;
+      const msg = e.reason instanceof Error ? e.reason.message : String(e.reason);
+      this._emit({
+        severity: 'error',
+        category: 'network_error',
+        title: 'Unhandled Error',
+        message: `An unhandled error occurred: "${msg.slice(0, 100)}". This may affect app stability.`,
+        autoHealable: false,
       });
-      // Record idle event for memory
-      this.addEvent({ type: 'idle', section: this.currentSection, timestamp: Date.now(), detail: `${sessionMinutes}min session` });
-    }, IDLE_THRESHOLD_MS);
-  };
+    };
+
+    this.globalErrorHandler = (e: ErrorEvent) => {
+      if (this.sensitivity === 'off') return;
+      this._emit({
+        severity: 'critical',
+        category: 'app_state',
+        title: 'Critical App Error',
+        message: `A critical error was caught: "${e.message}". Consider saving your work and refreshing.`,
+        actionLabel: 'Refresh',
+        action: () => window.location.reload(),
+        autoHealable: true,
+      });
+    };
+
+    window.addEventListener('unhandledrejection', this.unhandledRejectionHandler);
+    window.addEventListener('error', this.globalErrorHandler);
+  }
+
+  private _startPeriodicChecks() {
+    this.monitorInterval = setInterval(() => {
+      this._checkLocalStorageHealth();
+    }, 60_000); // every 60 seconds
+  }
+
+  private _checkLocalStorageHealth() {
+    try {
+      const bids = localStorage.getItem('estimetric_bids');
+      if (bids) {
+        const parsed = JSON.parse(bids);
+        if (!Array.isArray(parsed)) {
+          this._emit({
+            severity: 'error',
+            category: 'data_inconsistency',
+            title: 'Corrupted Local Data',
+            message: 'Local bid data appears corrupted. Cloud sync will protect your data, but local cache should be cleared.',
+            actionLabel: 'Clear Cache',
+            action: () => { localStorage.removeItem('estimetric_bids'); window.location.reload(); },
+            autoHealable: true,
+          });
+        }
+      }
+    } catch {
+      this._emit({
+        severity: 'error',
+        category: 'self_healing',
+        title: 'Local Storage Error',
+        message: 'Could not read local storage. This may affect offline functionality.',
+        autoHealable: false,
+      });
+    }
+  }
+
+  private _unhook() {
+    console.error = this.originalConsoleError;
+    console.warn = this.originalConsoleWarn;
+    if (this.unhandledRejectionHandler) {
+      window.removeEventListener('unhandledrejection', this.unhandledRejectionHandler);
+    }
+    if (this.globalErrorHandler) {
+      window.removeEventListener('error', this.globalErrorHandler);
+    }
+    if (this.monitorInterval) {
+      clearInterval(this.monitorInterval);
+      this.monitorInterval = null;
+    }
+  }
 }
 
-export const foremanWatchdog = new ForemanWatchdogEngine();
+export const foremanWatchdog = new ForemanWatchdogService();
+export type { SuggestionHandler };

@@ -1,173 +1,153 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { foremanWatchdog, WatchdogAlert, AppSection, TaskMemory, BehaviorEvent } from '../services/ForemanWatchdog.ts';
-import { AppSettings } from '../types.ts';
-import { AppWatchdogContext } from '../hooks/useWatchdog.ts';
-import type { AppWatchdogContextValue, WatchdogSensitivity } from './watchdogTypes.ts';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  WatchdogContextValue,
+  WatchdogSensitivity,
+  WatchdogSuggestion,
+  UserBehaviorMetrics,
+  ForemanAlertState,
+} from '../types/watchdog.ts';
+import { foremanWatchdog } from '../services/ForemanWatchdog.ts';
+import { AppWatchdogContext } from './watchdogContext.ts';
 
-export type { WatchdogSensitivity } from './watchdogTypes.ts';
-export type { AppWatchdogContextValue } from './watchdogTypes.ts';
+export { AppWatchdogContext } from './watchdogContext.ts';
 
-// ─── Provider ──────────────────────────────────────────────────────────────────
+const defaultMetrics = (): UserBehaviorMetrics => ({
+  currentSection: 'home',
+  timeInSection: 0,
+  sectionStartedAt: Date.now(),
+  clickCount: 0,
+  formErrorCount: 0,
+  lastActivity: Date.now(),
+  sessionStart: Date.now(),
+  featureUsage: {},
+});
 
-interface AppWatchdogProviderProps {
+interface Props {
   children: React.ReactNode;
-  currentSection: AppSection;
-  onNavigate: (section: AppSection) => void;
-  onSettingsPatch?: (patch: Partial<AppSettings>) => void;
+  navigateTo: (tab: string) => void;
 }
 
-export const AppWatchdogProvider: React.FC<AppWatchdogProviderProps> = ({
-  children,
-  currentSection,
-  onNavigate,
-  onSettingsPatch
-}) => {
-  const [alerts, setAlerts] = useState<WatchdogAlert[]>([]);
-  const [activeAlert, setActiveAlert] = useState<WatchdogAlert | null>(null);
-  const [isStrobing, setIsStrobing] = useState(false);
+const VALID_SENSITIVITIES: WatchdogSensitivity[] = ['off', 'low', 'medium', 'high'];
+
+export const AppWatchdogProvider: React.FC<Props> = ({ children, navigateTo }) => {
   const [sensitivity, setSensitivityState] = useState<WatchdogSensitivity>(() => {
-    return (localStorage.getItem('foreman_sensitivity') as WatchdogSensitivity) ?? 'medium';
+    const saved = localStorage.getItem('watchdog_sensitivity');
+    return VALID_SENSITIVITIES.includes(saved as WatchdogSensitivity)
+      ? (saved as WatchdogSensitivity)
+      : 'medium';
   });
-  const [memories, setMemories] = useState<TaskMemory[]>(() => foremanWatchdog.getAllMemories());
-  const [recentEvents, setRecentEvents] = useState<BehaviorEvent[]>(() => foremanWatchdog.getRecentEvents());
+  const [suggestions, setSuggestions] = useState<WatchdogSuggestion[]>([]);
+  const [isForemanOpen, setIsForemanOpen] = useState(false);
+  const [metrics, setMetrics] = useState<UserBehaviorMetrics>(defaultMetrics());
+  const metricsRef = useRef(metrics);
+  metricsRef.current = metrics;
 
-  const strobeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Compute alert state from top-priority unread suggestion
+  const alertState: ForemanAlertState = React.useMemo(() => {
+    const unread = suggestions.filter(s => !s.dismissed);
+    if (unread.some(s => s.severity === 'critical')) return 'error';
+    if (unread.some(s => s.severity === 'error')) return 'error';
+    if (unread.some(s => s.severity === 'warning')) return 'warning';
+    if (unread.length > 0) return 'attention';
+    return 'idle';
+  }, [suggestions]);
 
-  // ── Sensitivity gate ────────────────────────────────────────────────────────
-  const shouldSuppressLevel = useCallback((level: WatchdogAlert['level']): boolean => {
-    if (sensitivity === 'off') return true;
-    if (sensitivity === 'low' && level === 'tip') return true;
-    return false;
-  }, [sensitivity]);
+  const unreadCount = suggestions.filter(s => !s.dismissed).length;
 
-  // ── Alert ingestion ─────────────────────────────────────────────────────────
-  useEffect(() => {
-    const unsubscribe = foremanWatchdog.onAlert((alert) => {
-      if (shouldSuppressLevel(alert.level)) return;
-
-      setAlerts(prev => {
-        // Deduplicate by title within 60 s
-        const dupe = prev.find(a => a.title === alert.title && Date.now() - a.timestamp < 60_000);
-        if (dupe) return prev;
-        return [alert, ...prev].slice(0, 50);
-      });
-
-      // Only show strobing + active for warning/critical
-      if (alert.level !== 'tip' || sensitivity === 'high') {
-        setActiveAlert(alert);
-        setIsStrobing(true);
-        if (strobeTimerRef.current) clearTimeout(strobeTimerRef.current);
-        strobeTimerRef.current = setTimeout(() => setIsStrobing(false), 4000);
-      }
+  const addSuggestion = useCallback((s: Omit<WatchdogSuggestion, 'id' | 'timestamp' | 'dismissed'>) => {
+    setSuggestions(prev => {
+      // Avoid duplicate titles within a 30-second window
+      const recentDuplicate = prev.find(
+        p => p.title === s.title && Date.now() - p.timestamp < 30_000
+      );
+      if (recentDuplicate) return prev;
+      const newSuggestion: WatchdogSuggestion = {
+        ...s,
+        id: `ws-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        timestamp: Date.now(),
+        dismissed: false,
+      };
+      return [newSuggestion, ...prev].slice(0, 50); // cap at 50
     });
+  }, []);
 
-    return unsubscribe;
-  }, [shouldSuppressLevel, sensitivity]);
-
-  // ── Install watchdog on mount ────────────────────────────────────────────────
+  // Init watchdog service
   useEffect(() => {
-    foremanWatchdog.install();
-    return () => foremanWatchdog.uninstall();
+    foremanWatchdog.init(addSuggestion, sensitivity);
+    return () => foremanWatchdog.destroy();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Track navigation changes ─────────────────────────────────────────────────
+  // Track section time
   useEffect(() => {
-    foremanWatchdog.recordNavigation(currentSection);
-    setRecentEvents(foremanWatchdog.getRecentEvents());
-  }, [currentSection]);
-
-  // ── Actions ──────────────────────────────────────────────────────────────────
-
-  const navigateTo = useCallback((section: AppSection) => {
-    onNavigate(section);
-  }, [onNavigate]);
-
-  const dismissAlert = useCallback((id: string) => {
-    setAlerts(prev => prev.filter(a => a.id !== id));
-    setActiveAlert(prev => prev?.id === id ? null : prev);
+    const interval = setInterval(() => {
+      setMetrics(prev => ({
+        ...prev,
+        timeInSection: Date.now() - prev.sectionStartedAt,
+      }));
+    }, 5000);
+    return () => clearInterval(interval);
   }, []);
 
-  const dismissActiveAlert = useCallback(() => {
-    setActiveAlert(null);
-    setIsStrobing(false);
+  // Track global clicks for behavior analytics
+  useEffect(() => {
+    const handler = () => {
+      setMetrics(prev => ({ ...prev, clickCount: prev.clickCount + 1, lastActivity: Date.now() }));
+    };
+    window.addEventListener('click', handler, { passive: true });
+    return () => window.removeEventListener('click', handler);
   }, []);
 
-  const recordFormStart = useCallback(() => {
-    foremanWatchdog.recordFormStart(currentSection);
-  }, [currentSection]);
-
-  const recordFormAbandon = useCallback(() => {
-    foremanWatchdog.recordFormAbandon(currentSection);
-  }, [currentSection]);
-
-  const recordSubmit = useCallback((detail?: string) => {
-    foremanWatchdog.recordSubmit(currentSection, detail);
-    setMemories(foremanWatchdog.getAllMemories());
-    setRecentEvents(foremanWatchdog.getRecentEvents());
-  }, [currentSection]);
-
-  const recordError = useCallback((detail: string) => {
-    foremanWatchdog.recordError(currentSection, detail);
-    setRecentEvents(foremanWatchdog.getRecentEvents());
-  }, [currentSection]);
-
-  const recordAction = useCallback((detail: string) => {
-    foremanWatchdog.recordAction(currentSection, detail);
-    setRecentEvents(foremanWatchdog.getRecentEvents());
-  }, [currentSection]);
-
-  const setSensitivity = useCallback((level: WatchdogSensitivity) => {
-    setSensitivityState(level);
-    localStorage.setItem('foreman_sensitivity', level);
+  const dismissSuggestion = useCallback((id: string) => {
+    setSuggestions(prev => prev.map(s => s.id === id ? { ...s, dismissed: true } : s));
   }, []);
 
-  const storeMemoryNote = useCallback((action: string, details: Record<string, unknown>, notes?: string) => {
-    foremanWatchdog.storeMemory({
-      id: `mem-${Date.now()}`,
-      section: currentSection,
-      action,
-      details,
-      timestamp: Date.now(),
-      outcome: 'success',
-      notes
-    });
-    setMemories(foremanWatchdog.getAllMemories());
-  }, [currentSection]);
-
-  const recallSimilar = useCallback((limit = 5) => {
-    return foremanWatchdog.recallSimilarMemories(currentSection, limit);
-  }, [currentSection]);
-
-  const clearMemories = useCallback(() => {
-    foremanWatchdog.clearMemories();
-    setMemories([]);
+  const clearAllSuggestions = useCallback(() => {
+    setSuggestions(prev => prev.map(s => ({ ...s, dismissed: true })));
   }, []);
 
-  const applySettingsPatch = useCallback((patch: Partial<AppSettings>) => {
-    onSettingsPatch?.(patch);
-  }, [onSettingsPatch]);
+  const openForeman = useCallback(() => setIsForemanOpen(true), []);
+  const closeForeman = useCallback(() => setIsForemanOpen(false), []);
 
-  const value: AppWatchdogContextValue = {
-    alerts,
-    activeAlert,
-    isStrobing,
+  const setSensitivity = useCallback((s: WatchdogSensitivity) => {
+    setSensitivityState(s);
+    localStorage.setItem('watchdog_sensitivity', s);
+    foremanWatchdog.updateSensitivity(s);
+  }, []);
+
+  const recordFeatureUse = useCallback((feature: string) => {
+    setMetrics(prev => ({
+      ...prev,
+      featureUsage: { ...prev.featureUsage, [feature]: (prev.featureUsage[feature] ?? 0) + 1 },
+    }));
+  }, []);
+
+  const handleNavigateTo = useCallback((tab: string) => {
+    setMetrics(prev => ({
+      ...prev,
+      currentSection: tab,
+      sectionStartedAt: Date.now(),
+      timeInSection: 0,
+    }));
+    navigateTo(tab);
+  }, [navigateTo]);
+
+  const value: WatchdogContextValue = {
+    isActive: sensitivity !== 'off',
     sensitivity,
-    currentSection,
-    memories,
-    recentEvents,
-    navigateTo,
-    dismissAlert,
-    dismissActiveAlert,
-    recordFormStart,
-    recordFormAbandon,
-    recordSubmit,
-    recordError,
-    recordAction,
+    alertState,
+    suggestions,
+    unreadCount,
+    metrics,
+    isForemanOpen,
+    dismissSuggestion,
+    clearAllSuggestions,
+    openForeman,
+    closeForeman,
     setSensitivity,
-    storeMemoryNote,
-    recallSimilar,
-    clearMemories,
-    applySettingsPatch
+    navigateTo: handleNavigateTo,
+    recordFeatureUse,
+    addSuggestion,
   };
 
   return (
@@ -176,4 +156,3 @@ export const AppWatchdogProvider: React.FC<AppWatchdogProviderProps> = ({
     </AppWatchdogContext.Provider>
   );
 };
-

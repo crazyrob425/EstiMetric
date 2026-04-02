@@ -1,376 +1,249 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { HardHat, X, ChevronRight, MessageSquare, AlertTriangle, Info, CheckCircle, Bell, BellOff, Trash2 } from 'lucide-react';
-import { useAppWatchdog } from '../hooks/useWatchdog.ts';
-import { WatchdogAlert, AppSection } from '../services/ForemanWatchdog.ts';
-import { WatchdogSensitivity } from '../contexts/watchdogTypes.ts';
-
-// ─── Alert Badge colours ────────────────────────────────────────────────────────
-const LEVEL_STYLES: Record<WatchdogAlert['level'], { bg: string; border: string; icon: React.ReactNode; label: string }> = {
-  tip: {
-    bg: 'bg-blue-900/90',
-    border: 'border-blue-500/40',
-    icon: <Info size={14} className="text-blue-400 shrink-0" />,
-    label: 'Tip'
-  },
-  warning: {
-    bg: 'bg-amber-900/90',
-    border: 'border-amber-500/40',
-    icon: <AlertTriangle size={14} className="text-amber-400 shrink-0" />,
-    label: 'Warning'
-  },
-  critical: {
-    bg: 'bg-red-900/90',
-    border: 'border-red-500/40',
-    icon: <AlertTriangle size={14} className="text-red-400 shrink-0" />,
-    label: 'Critical'
-  }
-};
-
-const SENSITIVITY_OPTIONS: { value: WatchdogSensitivity; label: string }[] = [
-  { value: 'off',    label: 'Off'    },
-  { value: 'low',    label: 'Low'    },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high',   label: 'High'   }
-];
-
-// ─── Strobe animation variants ──────────────────────────────────────────────────
-const strobeVariants = {
-  strobing: {
-    opacity: [1, 0.3, 1, 0.3, 1, 0.3, 1],
-    scale:   [1, 1.15, 1, 1.15, 1, 1.15, 1],
-    transition: { duration: 1.8, ease: 'easeInOut' }
-  },
-  idle: {
-    opacity: 0.85,
-    scale: 1,
-    transition: { duration: 0.3 }
-  }
-};
-
-// ─── StickyForeman Component ────────────────────────────────────────────────────
+import { HardHat, X, ChevronRight, AlertTriangle, Zap, Info, Trash2 } from 'lucide-react';
+import { useWatchdog } from '../hooks/useWatchdog.ts';
+import { WatchdogSuggestion, ForemanAlertState } from '../types/watchdog.ts';
 
 interface StickyForemanProps {
-  onOpenChat: () => void;
-  onNavigate: (section: AppSection) => void;
+  onOpenForeman: () => void;
 }
 
-const StickyForeman: React.FC<StickyForemanProps> = ({ onOpenChat, onNavigate }) => {
-  const {
-    alerts,
-    activeAlert,
-    isStrobing,
-    sensitivity,
-    setSensitivity,
-    dismissAlert,
-    dismissActiveAlert,
-    clearMemories,
-    memories
-  } = useAppWatchdog();
+const severityIcon = (severity: WatchdogSuggestion['severity']) => {
+  switch (severity) {
+    case 'critical':
+    case 'error':
+      return <AlertTriangle size={14} className="text-red-400" />;
+    case 'warning':
+      return <AlertTriangle size={14} className="text-amber-400" />;
+    case 'tip':
+      return <Zap size={14} className="text-emerald-400" />;
+    default:
+      return <Info size={14} className="text-blue-400" />;
+  }
+};
 
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [tab, setTab] = useState<'alerts' | 'memory' | 'settings'>('alerts');
-  const panelRef = useRef<HTMLDivElement>(null);
-  const unreadCount = alerts.filter(a => !a.dismissed).length;
+const alertStateStyles: Record<ForemanAlertState, string> = {
+  idle: 'opacity-60 shadow-[0_0_16px_rgba(251,191,36,0.2)]',
+  attention: 'opacity-90 shadow-[0_0_24px_rgba(251,191,36,0.4)]',
+  warning: 'opacity-100 shadow-[0_0_32px_rgba(251,191,36,0.6)] animate-watchdog-pulse',
+  error: 'opacity-100 shadow-[0_0_40px_rgba(239,68,68,0.7)] animate-watchdog-strobe',
+};
 
-  // Close panel when clicking outside
+const StickyForeman: React.FC<StickyForemanProps> = ({ onOpenForeman }) => {
+  const { alertState, unreadCount, suggestions, dismissSuggestion, clearAllSuggestions } = useWatchdog();
+  const [showPanel, setShowPanel] = useState(false);
+  const [poppedSuggestion, setPoppedSuggestion] = useState<WatchdogSuggestion | null>(null);
+  const prevAlertState = useRef<ForemanAlertState>('idle');
+  const popTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Auto-pop latest unread suggestion when alert escalates
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        setPanelOpen(false);
-      }
-    };
-    if (panelOpen) document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [panelOpen]);
+    const escalated =
+      alertState !== 'idle' &&
+      alertState !== prevAlertState.current &&
+      (alertState === 'warning' || alertState === 'error');
 
-  const handleAlertAction = (alert: WatchdogAlert) => {
-    if (alert.targetTab) onNavigate(alert.targetTab);
-    if (alert.action === 'Open Foreman') onOpenChat();
-    dismissAlert(alert.id);
-    dismissActiveAlert();
-    setPanelOpen(false);
+    if (escalated) {
+      const latest = suggestions.find(s => !s.dismissed);
+      if (latest) {
+        setPoppedSuggestion(latest);
+        if (popTimer.current) clearTimeout(popTimer.current);
+        popTimer.current = setTimeout(() => setPoppedSuggestion(null), 8000);
+      }
+    }
+    prevAlertState.current = alertState;
+    return () => {
+      if (popTimer.current) clearTimeout(popTimer.current);
+    };
+  }, [alertState, suggestions]);
+
+  const handleForemanClick = () => {
+    setShowPanel(false);
+    setPoppedSuggestion(null);
+    onOpenForeman();
+  };
+
+  const handleDismissPopped = () => {
+    if (poppedSuggestion) {
+      dismissSuggestion(poppedSuggestion.id);
+      setPoppedSuggestion(null);
+    }
   };
 
   return (
     <>
-      {/* ── Active alert toast ──────────────────────────────────────────────── */}
+      {/* Sticky Hardhat Button */}
+      <motion.div
+        className="fixed bottom-28 left-6 z-[90] flex flex-col items-start gap-2"
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ delay: 0.5 }}
+      >
+        <motion.button
+          onClick={() => setShowPanel(v => !v)}
+          className={`relative w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-yellow-600 flex items-center justify-center transition-all border border-amber-300/40 ${alertStateStyles[alertState]}`}
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.92 }}
+          title="AI Foreman Watchdog"
+          aria-label="AI Foreman Watchdog"
+        >
+          <HardHat size={26} className="text-slate-900" />
+          {/* Badge */}
+          {unreadCount > 0 && (
+            <motion.span
+              key={unreadCount}
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              className={`absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] rounded-full text-[10px] font-black flex items-center justify-center px-1 ${
+                alertState === 'error' ? 'bg-red-500 text-white' : 'bg-amber-500 text-slate-900'
+              }`}
+            >
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </motion.span>
+          )}
+        </motion.button>
+      </motion.div>
+
+      {/* Popped Suggestion Bubble */}
       <AnimatePresence>
-        {activeAlert && !panelOpen && (
+        {poppedSuggestion && !showPanel && (
           <motion.div
-            key={activeAlert.id}
-            initial={{ opacity: 0, y: 20, x: 0 }}
-            animate={{ opacity: 1, y: 0, x: 0 }}
-            exit={{ opacity: 0, y: 10 }}
-            className={`fixed bottom-28 right-6 z-[200] max-w-xs w-72 rounded-2xl border backdrop-blur-xl p-4 shadow-2xl ${LEVEL_STYLES[activeAlert.level].bg} ${LEVEL_STYLES[activeAlert.level].border}`}
+            key="popped"
+            initial={{ opacity: 0, x: -20, scale: 0.95 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: -20, scale: 0.95 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+            className="fixed bottom-44 left-6 z-[90] max-w-[280px]"
           >
-            <div className="flex items-start gap-3">
-              {LEVEL_STYLES[activeAlert.level].icon}
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-black uppercase tracking-widest text-white leading-none mb-1">
-                  {activeAlert.title}
+            <div className="bg-slate-900 border border-amber-500/40 rounded-2xl p-4 shadow-2xl">
+              <div className="flex items-start gap-2 mb-2">
+                {severityIcon(poppedSuggestion.severity)}
+                <p className="text-[11px] font-black text-white uppercase tracking-widest leading-tight flex-1">
+                  {poppedSuggestion.title}
                 </p>
-                <p className="text-[11px] text-slate-300 leading-relaxed">
-                  {activeAlert.message}
-                </p>
-                {activeAlert.action && (
+                <button
+                  onClick={handleDismissPopped}
+                  className="text-slate-500 hover:text-slate-300 transition-colors shrink-0"
+                  aria-label="Dismiss"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed mb-3">{poppedSuggestion.message}</p>
+              <div className="flex gap-2">
+                {poppedSuggestion.actionLabel && poppedSuggestion.action && (
                   <button
-                    onClick={() => handleAlertAction(activeAlert)}
-                    className="mt-2 flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-yellow-400 hover:text-yellow-300"
+                    onClick={() => { poppedSuggestion.action!(); handleDismissPopped(); }}
+                    className="flex-1 py-1.5 px-3 bg-amber-500/20 border border-amber-500/40 rounded-lg text-[10px] font-black text-amber-400 uppercase tracking-widest hover:bg-amber-500/30 transition-all"
                   >
-                    {activeAlert.action} <ChevronRight size={10} />
+                    {poppedSuggestion.actionLabel}
                   </button>
                 )}
+                <button
+                  onClick={handleForemanClick}
+                  className="flex items-center gap-1 py-1.5 px-3 bg-white/5 border border-white/10 rounded-lg text-[10px] font-black text-slate-400 uppercase tracking-widest hover:bg-white/10 transition-all"
+                >
+                  Foreman <ChevronRight size={10} />
+                </button>
               </div>
-              <button
-                onClick={dismissActiveAlert}
-                className="text-slate-500 hover:text-white transition-colors shrink-0"
-                aria-label="Dismiss alert"
-              >
-                <X size={14} />
-              </button>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ── Sticky hardhat icon ──────────────────────────────────────────────── */}
-      <motion.div
-        className="fixed bottom-6 right-6 z-[210] flex flex-col items-center gap-1"
-        animate={isStrobing ? 'strobing' : 'idle'}
-        variants={strobeVariants}
-      >
-        {/* Unread badge */}
-        {unreadCount > 0 && !panelOpen && (
-          <motion.div
-            key="badge"
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 flex items-center justify-center z-10 shadow-lg"
-          >
-            <span className="text-[9px] font-black text-white">{unreadCount > 9 ? '9+' : unreadCount}</span>
-          </motion.div>
-        )}
-
-        <button
-          onClick={() => setPanelOpen(v => !v)}
-          className={`w-14 h-14 rounded-full flex items-center justify-center shadow-2xl transition-all duration-200 active:scale-90 ${
-            isStrobing
-              ? 'bg-yellow-400 shadow-yellow-400/60 ring-4 ring-yellow-300/60'
-              : 'bg-yellow-400/85 hover:bg-yellow-400 shadow-yellow-400/30'
-          }`}
-          aria-label="Open Foreman Watchdog panel"
-          title="Foreman Watchdog"
-        >
-          <HardHat size={28} className="text-slate-900" strokeWidth={2.5} />
-        </button>
-        <span className="text-[8px] font-black uppercase tracking-widest text-yellow-400/80">
-          Foreman
-        </span>
-      </motion.div>
-
-      {/* ── Slide-out panel ──────────────────────────────────────────────────── */}
+      {/* Suggestions Panel */}
       <AnimatePresence>
-        {panelOpen && (
+        {showPanel && (
           <motion.div
-            ref={panelRef}
-            key="foreman-panel"
-            initial={{ opacity: 0, x: 60 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 60 }}
-            transition={{ type: 'spring', stiffness: 320, damping: 30 }}
-            className="fixed bottom-24 right-6 z-[220] w-80 rounded-3xl bg-slate-900/95 border border-white/10 shadow-2xl backdrop-blur-2xl overflow-hidden"
+            key="panel"
+            initial={{ opacity: 0, x: -20, scale: 0.97 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: -20, scale: 0.97 }}
+            transition={{ type: 'spring', stiffness: 280, damping: 26 }}
+            className="fixed bottom-44 left-6 z-[90] w-80"
           >
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
-              <div className="flex items-center gap-2">
-                <HardHat size={18} className="text-yellow-400" />
-                <span className="text-sm font-black uppercase tracking-widest text-white">Foreman</span>
-                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <div className="bg-slate-900/95 border border-amber-500/30 rounded-2xl shadow-2xl overflow-hidden">
+              {/* Panel Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
+                <div className="flex items-center gap-2">
+                  <HardHat size={16} className="text-amber-400" />
+                  <span className="text-[11px] font-black text-white uppercase tracking-widest">AI Foreman</span>
+                  {unreadCount > 0 && (
+                    <span className="bg-amber-500 text-slate-900 text-[9px] font-black px-1.5 py-0.5 rounded-full">
+                      {unreadCount}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {suggestions.some(s => !s.dismissed) && (
+                    <button
+                      onClick={clearAllSuggestions}
+                      className="text-slate-500 hover:text-slate-300 transition-colors"
+                      title="Clear all"
+                      aria-label="Clear all suggestions"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowPanel(false)}
+                    className="text-slate-500 hover:text-slate-300 transition-colors"
+                    aria-label="Close panel"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={onOpenChat}
-                  className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
-                  title="Open chat"
-                  aria-label="Open Foreman chat"
-                >
-                  <MessageSquare size={15} />
-                </button>
-                <button
-                  onClick={() => setPanelOpen(false)}
-                  className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
-                  aria-label="Close panel"
-                >
-                  <X size={15} />
-                </button>
-              </div>
-            </div>
 
-            {/* Tab bar */}
-            <div className="flex border-b border-white/10">
-              {(['alerts', 'memory', 'settings'] as const).map(t => (
-                <button
-                  key={t}
-                  onClick={() => setTab(t)}
-                  className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest transition-colors ${
-                    tab === t ? 'text-yellow-400 border-b-2 border-yellow-400' : 'text-slate-500 hover:text-slate-300'
-                  }`}
-                >
-                  {t === 'alerts' ? `Alerts${unreadCount > 0 ? ` (${unreadCount})` : ''}` : t}
-                </button>
-              ))}
-            </div>
-
-            {/* Tab content */}
-            <div className="max-h-80 overflow-y-auto custom-scrollbar">
-
-              {/* ── Alerts tab ── */}
-              {tab === 'alerts' && (
-                <div className="p-3 space-y-2">
-                  {alerts.length === 0 ? (
-                    <div className="py-8 flex flex-col items-center gap-2 text-slate-500">
-                      <CheckCircle size={28} />
-                      <p className="text-[11px] font-bold uppercase tracking-widest">All clear – no issues detected</p>
-                    </div>
-                  ) : (
-                    alerts.map(alert => (
+              {/* Suggestions List */}
+              <div className="max-h-72 overflow-y-auto">
+                {suggestions.filter(s => !s.dismissed).length === 0 ? (
+                  <div className="py-8 px-5 text-center">
+                    <HardHat size={28} className="text-slate-600 mx-auto mb-3" />
+                    <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">All clear — no issues detected</p>
+                  </div>
+                ) : (
+                  <div className="p-3 space-y-2">
+                    {suggestions.filter(s => !s.dismissed).map(s => (
                       <div
-                        key={alert.id}
-                        className={`rounded-xl border p-3 ${LEVEL_STYLES[alert.level].bg} ${LEVEL_STYLES[alert.level].border}`}
+                        key={s.id}
+                        className="bg-white/5 border border-white/10 rounded-xl p-3 group"
                       >
-                        <div className="flex items-start gap-2">
-                          {LEVEL_STYLES[alert.level].icon}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[10px] font-black uppercase tracking-widest text-white leading-none mb-0.5">
-                              {alert.title}
-                            </p>
-                            <p className="text-[10px] text-slate-400 leading-relaxed">{alert.message}</p>
-                            {alert.action && (
-                              <button
-                                onClick={() => handleAlertAction(alert)}
-                                className="mt-1.5 flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-yellow-400 hover:text-yellow-300"
-                              >
-                                {alert.action} <ChevronRight size={9} />
-                              </button>
-                            )}
-                          </div>
+                        <div className="flex items-start gap-2 mb-1.5">
+                          {severityIcon(s.severity)}
+                          <p className="text-[11px] font-black text-white flex-1 leading-tight">{s.title}</p>
                           <button
-                            onClick={() => dismissAlert(alert.id)}
-                            className="text-slate-600 hover:text-slate-300 transition-colors shrink-0"
-                            aria-label={`Dismiss alert: ${alert.title}`}
+                            onClick={() => dismissSuggestion(s.id)}
+                            className="opacity-0 group-hover:opacity-100 text-slate-600 hover:text-slate-400 transition-all"
+                            aria-label="Dismiss suggestion"
                           >
-                            <X size={12} />
+                            <X size={11} />
                           </button>
                         </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
-
-              {/* ── Memory tab ── */}
-              {tab === 'memory' && (
-                <div className="p-3 space-y-2">
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                      {memories.length} task {memories.length === 1 ? 'memory' : 'memories'}
-                    </p>
-                    {memories.length > 0 && (
-                      <button
-                        onClick={clearMemories}
-                        className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-red-400 hover:text-red-300"
-                        aria-label="Clear all memories"
-                      >
-                        <Trash2 size={10} /> Clear
-                      </button>
-                    )}
-                  </div>
-                  {memories.length === 0 ? (
-                    <div className="py-8 flex flex-col items-center gap-2 text-slate-500">
-                      <Info size={28} />
-                      <p className="text-[11px] font-bold uppercase tracking-widest text-center">
-                        No memories yet.<br />Complete tasks to build the Foreman's knowledge.
-                      </p>
-                    </div>
-                  ) : (
-                    [...memories].reverse().map(m => (
-                      <div key={m.id} className="rounded-xl bg-slate-800/60 border border-white/5 p-3">
-                        <div className="flex items-center justify-between mb-0.5">
-                          <span className="text-[9px] font-black uppercase tracking-widest text-blue-400">{m.section}</span>
-                          <span className="text-[9px] text-slate-500">{new Date(m.timestamp).toLocaleDateString()}</span>
-                        </div>
-                        <p className="text-[10px] text-slate-300 font-bold">{m.action}</p>
-                        {m.notes && <p className="text-[10px] text-slate-500 mt-0.5 italic">{m.notes}</p>}
-                        {m.outcome && (
-                          <span className={`mt-1 inline-block text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
-                            m.outcome === 'success' ? 'bg-emerald-900/60 text-emerald-400' :
-                            m.outcome === 'error'   ? 'bg-red-900/60 text-red-400' :
-                                                      'bg-slate-700 text-slate-400'
-                          }`}>
-                            {m.outcome}
-                          </span>
+                        <p className="text-[10px] text-slate-400 leading-relaxed mb-2">{s.message}</p>
+                        {s.actionLabel && s.action && (
+                          <button
+                            onClick={() => { s.action!(); dismissSuggestion(s.id); }}
+                            className="text-[10px] font-black text-amber-400 uppercase tracking-widest hover:text-amber-300 transition-colors"
+                          >
+                            {s.actionLabel} →
+                          </button>
                         )}
                       </div>
-                    ))
-                  )}
-                </div>
-              )}
-
-              {/* ── Settings tab ── */}
-              {tab === 'settings' && (
-                <div className="p-4 space-y-4">
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">
-                      Watchdog Sensitivity
-                    </p>
-                    <div className="grid grid-cols-4 gap-1">
-                      {SENSITIVITY_OPTIONS.map(opt => (
-                        <button
-                          key={opt.value}
-                          onClick={() => setSensitivity(opt.value)}
-                          className={`py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors ${
-                            sensitivity === opt.value
-                              ? 'bg-yellow-400 text-slate-900'
-                              : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                    <p className="mt-2 text-[9px] text-slate-500">
-                      {sensitivity === 'off'    && 'Watchdog is disabled. No alerts will be shown.'}
-                      {sensitivity === 'low'    && 'Only warnings and critical issues will be shown.'}
-                      {sensitivity === 'medium' && 'Warnings, critical issues, and important tips.'}
-                      {sensitivity === 'high'   && 'All alerts including minor tips and suggestions.'}
-                    </p>
+                    ))}
                   </div>
+                )}
+              </div>
 
-                  <div className="border-t border-white/10 pt-4">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">
-                      Notifications
-                    </p>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-slate-300">Alert toasts</span>
-                      {sensitivity === 'off' ? (
-                        <BellOff size={14} className="text-slate-600" />
-                      ) : (
-                        <Bell size={14} className="text-yellow-400" />
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="border-t border-white/10 pt-4">
-                    <button
-                      onClick={onOpenChat}
-                      className="w-full py-3 rounded-xl bg-yellow-400/10 border border-yellow-400/30 text-yellow-400 text-[10px] font-black uppercase tracking-widest hover:bg-yellow-400/20 transition-colors flex items-center justify-center gap-2"
-                    >
-                      <MessageSquare size={14} /> Open Foreman Chat
-                    </button>
-                  </div>
-                </div>
-              )}
+              {/* Footer: Open full Foreman */}
+              <div className="border-t border-white/10 p-3">
+                <button
+                  onClick={handleForemanClick}
+                  className="w-full py-2.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded-xl text-[11px] font-black text-amber-400 uppercase tracking-widest flex items-center justify-center gap-2 transition-all"
+                >
+                  Open Foreman Chat <ChevronRight size={14} />
+                </button>
+              </div>
             </div>
           </motion.div>
         )}
