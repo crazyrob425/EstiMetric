@@ -18,6 +18,9 @@ import { auth, db, signInWithPopup, googleProvider, signOut, onAuthStateChanged,
 import { User } from 'firebase/auth';
 import { getDocFromServer } from 'firebase/firestore';
 
+const BETA_FEEDBACK_EMAIL = 'blacklistedrob@gmail.com';
+const MAX_PENDING_FEEDBACK_ITEMS = 20;
+
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'home' | 'vault' | 'toolbox' | 'foreman' | 'new'>('home');
   const [bids, setBids] = useState<BidData[]>([]);
@@ -167,6 +170,9 @@ const App: React.FC = () => {
 
   const handleCancelAndExit = () => {
     window.close();
+    if (!window.closed && window.history.length > 1) {
+      window.history.back();
+    }
   };
 
   const handleAcceptBetaNotice = () => {
@@ -218,7 +224,7 @@ const App: React.FC = () => {
         const parsed = previous ? JSON.parse(previous) : [];
         const safeList = Array.isArray(parsed) ? parsed : [];
         safeList.push({ ...feedbackDoc, createdAt: new Date().toISOString() });
-        localStorage.setItem(pendingKey, JSON.stringify(safeList.slice(-20)));
+        localStorage.setItem(pendingKey, JSON.stringify(safeList.slice(-MAX_PENDING_FEEDBACK_ITEMS)));
       }
 
       const subject = encodeURIComponent(`EstiMetric Beta Feedback [${payload.category}] ${id}`);
@@ -236,7 +242,7 @@ const App: React.FC = () => {
         '',
         payload.screenshotDataUrl ? 'A screenshot was attached in-app and logged to the submission record.' : 'No screenshot attached.'
       ];
-      window.location.href = `mailto:blacklistedrob@gmail.com?subject=${subject}&body=${encodeURIComponent(bodyParts.join('\n'))}`;
+      window.location.href = `mailto:${BETA_FEEDBACK_EMAIL}?subject=${subject}&body=${encodeURIComponent(bodyParts.join('\n'))}`;
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, user ? `users/${user.uid}/feedback` : 'local-feedback');
     }

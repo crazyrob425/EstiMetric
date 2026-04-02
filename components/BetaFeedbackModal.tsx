@@ -49,7 +49,6 @@ const BetaFeedbackModal: React.FC<BetaFeedbackModalProps> = ({ activeTab, defaul
         screenshotDataUrl,
         activeTab,
         userAgent: navigator.userAgent,
-        userId: null,
       });
       onClose();
     } finally {
