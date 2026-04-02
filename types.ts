@@ -107,3 +107,16 @@ export interface AppSettings {
   pricingSource: PricingSource;
   showAmazonComparison: boolean;
 }
+
+export interface BetaFeedbackSubmission {
+  id: string;
+  message: string;
+  email?: string;
+  category: 'Bug' | 'Suggestion' | 'Feature Request';
+  screenshotDataUrl?: string;
+  activeTab: 'home' | 'vault' | 'toolbox' | 'foreman' | 'new';
+  userAgent: string;
+  createdAt: string;
+  source: 'android-beta';
+  userId?: string | null;
+}

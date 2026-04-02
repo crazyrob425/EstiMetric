@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs, onSnapshot, query, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, onSnapshot, query, addDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 
 // Import the Firebase configuration
 import firebaseConfig from './firebase-applet-config.json';
@@ -24,7 +24,8 @@ export {
   query,
   addDoc,
   updateDoc,
-  deleteDoc
+  deleteDoc,
+  serverTimestamp
 };
 
 export enum OperationType {
