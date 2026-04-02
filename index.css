@@ -16,3 +16,30 @@
 
 .animate-watchdog-pulse  { animation: watchdog-pulse  1.6s ease-in-out infinite; }
 .animate-watchdog-strobe { animation: watchdog-strobe 0.7s ease-in-out infinite; }
+
+@keyframes beta-feedback-attention {
+  0%, 100% {
+    box-shadow: 0 0 0 rgba(59, 130, 246, 0);
+    transform: scale(1);
+  }
+  20% {
+    box-shadow: 0 0 24px rgba(59, 130, 246, 0.95);
+    transform: scale(1.08);
+  }
+  40% {
+    box-shadow: 0 0 0 rgba(59, 130, 246, 0);
+    transform: scale(1);
+  }
+  60% {
+    box-shadow: 0 0 24px rgba(139, 92, 246, 0.95);
+    transform: scale(1.08);
+  }
+  80% {
+    box-shadow: 0 0 0 rgba(59, 130, 246, 0);
+    transform: scale(1);
+  }
+}
+
+.animate-beta-feedback-attention {
+  animation: beta-feedback-attention 0.9s ease-in-out 4;
+}

@@ -9,11 +9,17 @@ import HelpMenu from './components/HelpMenu.tsx';
 import VaultProjectCard from './components/VaultProjectCard.tsx';
 import ToolboxHub from './components/ToolboxHub.tsx';
 import StickyForeman from './components/StickyForeman.tsx';
+import FirstRunBetaModal from './components/FirstRunBetaModal.tsx';
+import BetaFeedbackButton from './components/BetaFeedbackButton.tsx';
+import BetaFeedbackModal from './components/BetaFeedbackModal.tsx';
 import { AppWatchdogProvider } from './contexts/AppWatchdogContext.tsx';
-import { BidData, AppSettings, UserProfile } from './types.ts';
-import { auth, db, signInWithPopup, googleProvider, signOut, onAuthStateChanged, doc, getDoc, setDoc, updateDoc, collection, onSnapshot, query, handleFirestoreError, OperationType } from './firebase.ts';
+import { BidData, AppSettings, UserProfile, BetaFeedbackSubmission } from './types.ts';
+import { auth, db, signInWithPopup, googleProvider, signOut, onAuthStateChanged, doc, getDoc, setDoc, updateDoc, collection, onSnapshot, query, addDoc, serverTimestamp, handleFirestoreError, OperationType } from './firebase.ts';
 import { User } from 'firebase/auth';
 import { getDocFromServer } from 'firebase/firestore';
+
+const BETA_FEEDBACK_EMAIL = 'blacklistedrob@gmail.com';
+const MAX_PENDING_FEEDBACK_ITEMS = 20;
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'home' | 'vault' | 'toolbox' | 'foreman' | 'new'>('home');
@@ -23,6 +29,9 @@ const App: React.FC = () => {
   const [showForemanChat, setShowForemanChat] = useState(false);
   const [initialToolId, setInitialToolId] = useState<ToolType | undefined>(undefined);
   const [userLocation, setUserLocation] = useState<{lat: number, lon: number} | null>(null);
+  const [showFirstRunBetaModal, setShowFirstRunBetaModal] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [feedbackAttentionActive, setFeedbackAttentionActive] = useState(false);
   
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -141,6 +150,16 @@ const App: React.FC = () => {
   }, [user, isAuthReady]);
 
   useEffect(() => {
+    const ua = navigator.userAgent || '';
+    const isAndroid = /android/i.test(ua);
+    if (!isAndroid) return;
+    const hasAccepted = localStorage.getItem('estimetric_beta_notice_accepted_android') === 'true';
+    if (!hasAccepted) {
+      setShowFirstRunBetaModal(true);
+    }
+  }, []);
+
+  useEffect(() => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => setUserLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
@@ -148,6 +167,86 @@ const App: React.FC = () => {
       );
     }
   }, []);
+
+  const handleCancelAndExit = () => {
+    window.close();
+    if (!window.closed && window.history.length > 1) {
+      window.history.back();
+    }
+  };
+
+  const handleAcceptBetaNotice = () => {
+    localStorage.setItem('estimetric_beta_notice_accepted_android', 'true');
+    localStorage.setItem('estimetric_beta_feedback_attention_pending', 'true');
+    setShowFirstRunBetaModal(false);
+    setFeedbackAttentionActive(true);
+    window.setTimeout(() => {
+      setFeedbackAttentionActive(false);
+      localStorage.setItem('estimetric_beta_feedback_attention_pending', 'false');
+    }, 4200);
+  };
+
+  useEffect(() => {
+    const pending = localStorage.getItem('estimetric_beta_feedback_attention_pending') === 'true';
+    if (!pending) return;
+    setFeedbackAttentionActive(true);
+    const timer = window.setTimeout(() => {
+      setFeedbackAttentionActive(false);
+      localStorage.setItem('estimetric_beta_feedback_attention_pending', 'false');
+    }, 4200);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  const handleSubmitFeedback = async (payload: Omit<BetaFeedbackSubmission, 'id' | 'createdAt' | 'source'>) => {
+    const id = `fb_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const message = payload.message.trim();
+    if (!message) return;
+
+    const feedbackDoc = {
+      id,
+      message,
+      email: payload.email?.trim() || '',
+      category: payload.category,
+      screenshotDataUrl: payload.screenshotDataUrl || '',
+      activeTab: payload.activeTab,
+      userAgent: payload.userAgent,
+      source: 'android-beta',
+      userId: user?.uid || null,
+      createdAt: serverTimestamp()
+    };
+
+    try {
+      if (user) {
+        await addDoc(collection(db, `users/${user.uid}/feedback`), feedbackDoc);
+      } else {
+        const pendingKey = 'estimetric_pending_beta_feedback';
+        const previous = localStorage.getItem(pendingKey);
+        const parsed = previous ? JSON.parse(previous) : [];
+        const safeList = Array.isArray(parsed) ? parsed : [];
+        safeList.push({ ...feedbackDoc, createdAt: new Date().toISOString() });
+        localStorage.setItem(pendingKey, JSON.stringify(safeList.slice(-MAX_PENDING_FEEDBACK_ITEMS)));
+      }
+
+      const subject = encodeURIComponent(`EstiMetric Beta Feedback [${payload.category}] ${id}`);
+      const bodyParts = [
+        'EstiMetric Beta Feedback Submission',
+        '',
+        `Submission ID: ${id}`,
+        `Category: ${payload.category}`,
+        `Active Tab: ${payload.activeTab}`,
+        `User Email: ${payload.email?.trim() || 'Not provided'}`,
+        `User ID: ${user?.uid || 'Anonymous/Not signed in'}`,
+        '',
+        'Feedback Details:',
+        message,
+        '',
+        payload.screenshotDataUrl ? 'A screenshot was attached in-app and logged to the submission record.' : 'No screenshot attached.'
+      ];
+      window.location.href = `mailto:${BETA_FEEDBACK_EMAIL}?subject=${subject}&body=${encodeURIComponent(bodyParts.join('\n'))}`;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, user ? `users/${user.uid}/feedback` : 'local-feedback');
+    }
+  };
 
   const handleComplete = async (newBid: BidData) => {
     if (user) {
@@ -484,6 +583,8 @@ const App: React.FC = () => {
       {/* Floating Toolbox Hub — collapsed icon + expanded grid */}
       <ToolboxHub onOpenTool={handleOpenTool} />
 
+      <BetaFeedbackButton onClick={() => setShowFeedbackModal(true)} shouldFlash={feedbackAttentionActive} />
+
       {/* Sticky AI Foreman Watchdog Icon */}
       <StickyForeman onOpenForeman={() => setShowForemanChat(true)} />
 
@@ -511,6 +612,20 @@ const App: React.FC = () => {
 
       {showSettings && <SettingsModal settings={settings} userProfile={userProfile} onSave={handleSaveSettings} onSaveProfile={handleSaveProfile} onClose={() => setShowSettings(false)} />}
       {showHelp && <HelpMenu onClose={() => setShowHelp(false)} />}
+      {showFeedbackModal && (
+        <BetaFeedbackModal
+          activeTab={activeTab}
+          defaultEmail={userProfile?.email || ''}
+          onClose={() => setShowFeedbackModal(false)}
+          onSubmit={handleSubmitFeedback}
+        />
+      )}
+      {showFirstRunBetaModal && (
+        <FirstRunBetaModal
+          onAccept={handleAcceptBetaNotice}
+          onCancel={handleCancelAndExit}
+        />
+      )}
     </div>
     </AppWatchdogProvider>
   );
