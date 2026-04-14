@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, Rocket, Mail, Phone } from 'lucide-react';
 import MetallicPanel from './MetallicPanel';
-import { BetaJoinSubmissionPayload } from '../types.ts';
+import { BetaJoinSubmissionPayload } from '../types';
 
 interface BetaJoinModalProps {
   defaultEmail?: string;

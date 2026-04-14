@@ -12,8 +12,8 @@ import StickyForeman from './components/StickyForeman.tsx';
 import FirstRunBetaModal from './components/FirstRunBetaModal.tsx';
 import BetaFeedbackButton from './components/BetaFeedbackButton.tsx';
 import BetaFeedbackModal from './components/BetaFeedbackModal.tsx';
-import BetaJoinModal from './components/BetaJoinModal';
-import ComposeInspiredTemplate from './components/ComposeInspiredTemplate';
+import BetaJoinModal from './components/BetaJoinModal.tsx';
+import ComposeInspiredTemplate from './components/ComposeInspiredTemplate.tsx';
 import { AppWatchdogProvider } from './contexts/AppWatchdogContext.tsx';
 import { BidData, AppSettings, UserProfile, BetaFeedbackSubmission, BetaJoinSubmissionPayload } from './types.ts';
 import { auth, db, signInWithPopup, googleProvider, signOut, onAuthStateChanged, doc, getDoc, setDoc, updateDoc, collection, onSnapshot, query, addDoc, serverTimestamp, handleFirestoreError, OperationType } from './firebase.ts';
@@ -236,7 +236,7 @@ const App: React.FC = () => {
         const parsed = previous ? JSON.parse(previous) : [];
         const safeList = Array.isArray(parsed) ? parsed : [];
         safeList.push({ ...feedbackDoc, createdAt: new Date().toISOString() });
-        localStorage.setItem(pendingKey, JSON.stringify(safeList.slice(-MAX_PENDING_JOIN_ITEMS)));
+        localStorage.setItem(pendingKey, JSON.stringify(safeList.slice(-MAX_PENDING_FEEDBACK_ITEMS)));
       }
 
       const subject = encodeURIComponent(`EstiMetric Beta Feedback [${payload.category}] ${id}`);
@@ -281,7 +281,7 @@ const App: React.FC = () => {
         const parsed = previous ? JSON.parse(previous) : [];
         const safeList = Array.isArray(parsed) ? parsed : [];
         safeList.push({ ...joinRecord, createdAt: new Date().toISOString() });
-        localStorage.setItem(pendingKey, JSON.stringify(safeList.slice(-MAX_PENDING_FEEDBACK_ITEMS)));
+        localStorage.setItem(pendingKey, JSON.stringify(safeList.slice(-MAX_PENDING_JOIN_ITEMS)));
       }
       localStorage.setItem(BETA_JOINED_STORAGE_KEY, 'true');
       localStorage.setItem('estimetric_beta_join_email', payload.email.trim());
