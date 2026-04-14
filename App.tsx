@@ -12,14 +12,17 @@ import StickyForeman from './components/StickyForeman.tsx';
 import FirstRunBetaModal from './components/FirstRunBetaModal.tsx';
 import BetaFeedbackButton from './components/BetaFeedbackButton.tsx';
 import BetaFeedbackModal from './components/BetaFeedbackModal.tsx';
+import BetaJoinModal from './components/BetaJoinModal.tsx';
+import ComposeInspiredTemplate from './components/ComposeInspiredTemplate.tsx';
 import { AppWatchdogProvider } from './contexts/AppWatchdogContext.tsx';
-import { BidData, AppSettings, UserProfile, BetaFeedbackSubmission } from './types.ts';
+import { BidData, AppSettings, UserProfile, BetaFeedbackSubmission, BetaJoinSubmissionPayload } from './types.ts';
 import { auth, db, signInWithPopup, googleProvider, signOut, onAuthStateChanged, doc, getDoc, setDoc, updateDoc, collection, onSnapshot, query, addDoc, serverTimestamp, handleFirestoreError, OperationType } from './firebase.ts';
 import { User } from 'firebase/auth';
 import { getDocFromServer } from 'firebase/firestore';
 
 const BETA_FEEDBACK_EMAIL = 'blacklistedrob@gmail.com';
 const MAX_PENDING_FEEDBACK_ITEMS = 20;
+const BETA_JOINED_STORAGE_KEY = 'estimetric_beta_join_completed';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'home' | 'vault' | 'toolbox' | 'foreman' | 'new'>('home');
@@ -30,6 +33,7 @@ const App: React.FC = () => {
   const [initialToolId, setInitialToolId] = useState<ToolType | undefined>(undefined);
   const [userLocation, setUserLocation] = useState<{lat: number, lon: number} | null>(null);
   const [showFirstRunBetaModal, setShowFirstRunBetaModal] = useState(false);
+  const [showBetaJoinModal, setShowBetaJoinModal] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackAttentionActive, setFeedbackAttentionActive] = useState(false);
   
@@ -197,6 +201,13 @@ const App: React.FC = () => {
     return () => window.clearTimeout(timer);
   }, []);
 
+  useEffect(() => {
+    const hasJoinedBeta = localStorage.getItem(BETA_JOINED_STORAGE_KEY) === 'true';
+    if (!hasJoinedBeta) {
+      setShowBetaJoinModal(true);
+    }
+  }, []);
+
   const handleSubmitFeedback = async (payload: Omit<BetaFeedbackSubmission, 'id' | 'createdAt' | 'source'>) => {
     const id = `fb_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     const message = payload.message.trim();
@@ -245,6 +256,37 @@ const App: React.FC = () => {
       window.location.href = `mailto:${BETA_FEEDBACK_EMAIL}?subject=${subject}&body=${encodeURIComponent(bodyParts.join('\n'))}`;
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, user ? `users/${user.uid}/feedback` : 'local-feedback');
+    }
+  };
+
+  const handleBetaJoin = async (payload: BetaJoinSubmissionPayload) => {
+    const id = `join_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const joinRecord = {
+      id,
+      email: payload.email.trim(),
+      contactInfo: payload.contactInfo.trim(),
+      source: 'android-beta',
+      userId: user?.uid || null,
+      createdAt: serverTimestamp(),
+      userAgent: navigator.userAgent
+    };
+
+    try {
+      if (user) {
+        await addDoc(collection(db, `users/${user.uid}/betaJoins`), joinRecord);
+      } else {
+        const pendingKey = 'estimetric_pending_beta_joins';
+        const previous = localStorage.getItem(pendingKey);
+        const parsed = previous ? JSON.parse(previous) : [];
+        const safeList = Array.isArray(parsed) ? parsed : [];
+        safeList.push({ ...joinRecord, createdAt: new Date().toISOString() });
+        localStorage.setItem(pendingKey, JSON.stringify(safeList.slice(-MAX_PENDING_FEEDBACK_ITEMS)));
+      }
+      localStorage.setItem(BETA_JOINED_STORAGE_KEY, 'true');
+      localStorage.setItem('estimetric_beta_join_email', payload.email.trim());
+      setShowBetaJoinModal(false);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, user ? `users/${user.uid}/betaJoins` : 'local-beta-joins');
     }
   };
 
@@ -403,76 +445,77 @@ const App: React.FC = () => {
                 exit={{ opacity: 0, y: -20 }}
                 className="space-y-8 flex flex-col items-center justify-center min-h-[70vh]"
               >
-                <div className="text-center space-y-4 mb-8">
-                  <h2 className="text-4xl md:text-5xl font-black uppercase tracking-widest text-white">EstiMetric</h2>
-                  <p className="text-slate-400 font-bold tracking-widest uppercase text-sm">Select an operation to begin</p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl">
-                  <button 
-                    onClick={() => setActiveTab('new')}
-                    className="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-blue-600 to-indigo-700 p-8 text-left transition-all hover:scale-[1.02] hover:shadow-[0_0_40px_rgba(59,130,246,0.4)]"
-                  >
-                    <div className="absolute top-0 right-0 p-8 opacity-20 transition-transform group-hover:scale-110 group-hover:opacity-30">
-                      <PlusCircle size={120} />
-                    </div>
-                    <div className="relative z-10">
-                      <div className="mb-4 inline-flex rounded-xl bg-white/20 p-4 backdrop-blur-md">
-                        <PlusCircle size={32} className="text-white" />
+                <ComposeInspiredTemplate
+                  variant="home"
+                  title="EstiMetric"
+                  subtitle="Select an operation to begin"
+                >
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl">
+                    <button 
+                      onClick={() => setActiveTab('new')}
+                      className="group relative overflow-hidden rounded-3xl bg-gradient-to-br from-blue-600 to-indigo-700 p-8 text-left transition-all hover:scale-[1.02] hover:shadow-[0_0_40px_rgba(59,130,246,0.4)]"
+                    >
+                      <div className="absolute top-0 right-0 p-8 opacity-20 transition-transform group-hover:scale-110 group-hover:opacity-30">
+                        <PlusCircle size={120} />
                       </div>
-                      <h3 className="mb-2 text-2xl font-black uppercase tracking-widest text-white">Start New Bid</h3>
-                      <p className="text-sm font-bold tracking-widest text-blue-100 uppercase opacity-80">Initiate a new project survey and takeoff</p>
-                    </div>
-                  </button>
-
-                  <button 
-                    onClick={() => setActiveTab('vault')}
-                    className="group relative overflow-hidden rounded-3xl bg-slate-800 p-8 text-left transition-all hover:scale-[1.02] hover:bg-slate-700 border border-white/5"
-                  >
-                    <div className="absolute top-0 right-0 p-8 opacity-5 transition-transform group-hover:scale-110 group-hover:opacity-10">
-                      <Database size={120} />
-                    </div>
-                    <div className="relative z-10">
-                      <div className="mb-4 inline-flex rounded-xl bg-white/5 p-4">
-                        <Database size={32} className="text-blue-400" />
+                      <div className="relative z-10">
+                        <div className="mb-4 inline-flex rounded-xl bg-white/20 p-4 backdrop-blur-md">
+                          <PlusCircle size={32} className="text-white" />
+                        </div>
+                        <h3 className="mb-2 text-2xl font-black uppercase tracking-widest text-white">Start New Bid</h3>
+                        <p className="text-sm font-bold tracking-widest text-blue-100 uppercase opacity-80">Initiate a new project survey and takeoff</p>
                       </div>
-                      <h3 className="mb-2 text-2xl font-black uppercase tracking-widest text-white">Project Vault</h3>
-                      <p className="text-sm font-bold tracking-widest text-slate-400 uppercase">Access saved bids and historical data</p>
-                    </div>
-                  </button>
+                    </button>
 
-                  <button 
-                    onClick={() => setActiveTab('toolbox')}
-                    className="group relative overflow-hidden rounded-3xl bg-slate-800 p-8 text-left transition-all hover:scale-[1.02] hover:bg-slate-700 border border-white/5"
-                  >
-                    <div className="absolute top-0 right-0 p-8 opacity-5 transition-transform group-hover:scale-110 group-hover:opacity-10">
-                      <Ruler size={120} />
-                    </div>
-                    <div className="relative z-10">
-                      <div className="mb-4 inline-flex rounded-xl bg-white/5 p-4">
-                        <Ruler size={32} className="text-emerald-400" />
+                    <button 
+                      onClick={() => setActiveTab('vault')}
+                      className="group relative overflow-hidden rounded-3xl bg-slate-800 p-8 text-left transition-all hover:scale-[1.02] hover:bg-slate-700 border border-white/5"
+                    >
+                      <div className="absolute top-0 right-0 p-8 opacity-5 transition-transform group-hover:scale-110 group-hover:opacity-10">
+                        <Database size={120} />
                       </div>
-                      <h3 className="mb-2 text-2xl font-black uppercase tracking-widest text-white">Virtual Tools</h3>
-                      <p className="text-sm font-bold tracking-widest text-slate-400 uppercase">AR measurement and site analysis</p>
-                    </div>
-                  </button>
+                      <div className="relative z-10">
+                        <div className="mb-4 inline-flex rounded-xl bg-white/5 p-4">
+                          <Database size={32} className="text-blue-400" />
+                        </div>
+                        <h3 className="mb-2 text-2xl font-black uppercase tracking-widest text-white">Project Vault</h3>
+                        <p className="text-sm font-bold tracking-widest text-slate-400 uppercase">Access saved bids and historical data</p>
+                      </div>
+                    </button>
 
-                  <button 
-                    onClick={() => setActiveTab('foreman')}
-                    className="group relative overflow-hidden rounded-3xl bg-slate-800 p-8 text-left transition-all hover:scale-[1.02] hover:bg-slate-700 border border-white/5"
-                  >
-                    <div className="absolute top-0 right-0 p-8 opacity-5 transition-transform group-hover:scale-110 group-hover:opacity-10">
-                      <HardHat size={120} />
-                    </div>
-                    <div className="relative z-10">
-                      <div className="mb-4 inline-flex rounded-xl bg-white/5 p-4">
-                        <HardHat size={32} className="text-orange-400" />
+                    <button 
+                      onClick={() => setActiveTab('toolbox')}
+                      className="group relative overflow-hidden rounded-3xl bg-slate-800 p-8 text-left transition-all hover:scale-[1.02] hover:bg-slate-700 border border-white/5"
+                    >
+                      <div className="absolute top-0 right-0 p-8 opacity-5 transition-transform group-hover:scale-110 group-hover:opacity-10">
+                        <Ruler size={120} />
                       </div>
-                      <h3 className="mb-2 text-2xl font-black uppercase tracking-widest text-white">The Foreman</h3>
-                      <p className="text-sm font-bold tracking-widest text-slate-400 uppercase">Consult AI for technical guidance</p>
-                    </div>
-                  </button>
-                </div>
+                      <div className="relative z-10">
+                        <div className="mb-4 inline-flex rounded-xl bg-white/5 p-4">
+                          <Ruler size={32} className="text-emerald-400" />
+                        </div>
+                        <h3 className="mb-2 text-2xl font-black uppercase tracking-widest text-white">Virtual Tools</h3>
+                        <p className="text-sm font-bold tracking-widest text-slate-400 uppercase">AR measurement and site analysis</p>
+                      </div>
+                    </button>
+
+                    <button 
+                      onClick={() => setActiveTab('foreman')}
+                      className="group relative overflow-hidden rounded-3xl bg-slate-800 p-8 text-left transition-all hover:scale-[1.02] hover:bg-slate-700 border border-white/5"
+                    >
+                      <div className="absolute top-0 right-0 p-8 opacity-5 transition-transform group-hover:scale-110 group-hover:opacity-10">
+                        <HardHat size={120} />
+                      </div>
+                      <div className="relative z-10">
+                        <div className="mb-4 inline-flex rounded-xl bg-white/5 p-4">
+                          <HardHat size={32} className="text-orange-400" />
+                        </div>
+                        <h3 className="mb-2 text-2xl font-black uppercase tracking-widest text-white">The Foreman</h3>
+                        <p className="text-sm font-bold tracking-widest text-slate-400 uppercase">Consult AI for technical guidance</p>
+                      </div>
+                    </button>
+                  </div>
+                </ComposeInspiredTemplate>
               </motion.div>
             )}
 
@@ -484,24 +527,30 @@ const App: React.FC = () => {
                 exit={{ opacity: 0, y: -20 }}
                 className="space-y-10"
               >
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
-                  <QuickStat label="Project Files" value={bids.length.toString()} icon={<Database size={16} />} />
-                  <QuickStat label="Active Surveyors" value="1" icon={<Globe size={16} />} />
-                  <QuickStat label="System Health" value="99.9%" icon={<Activity size={16} />} />
-                  <QuickStat label="Vault Space" value="Nominal" icon={<LayoutDashboard size={16} />} />
-                </div>
+                <ComposeInspiredTemplate
+                  variant="vault"
+                  title="Project Vault"
+                  subtitle="All saved bids, metrics, and historical takeoffs in one place"
+                >
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
+                    <QuickStat label="Project Files" value={bids.length.toString()} icon={<Database size={16} />} />
+                    <QuickStat label="Active Surveyors" value="1" icon={<Globe size={16} />} />
+                    <QuickStat label="System Health" value="99.9%" icon={<Activity size={16} />} />
+                    <QuickStat label="Vault Space" value="Nominal" icon={<LayoutDashboard size={16} />} />
+                  </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-32">
-                  {bids.length === 0 ? (
-                    <div className="col-span-full py-32 flex flex-col items-center opacity-30">
-                      <LayoutDashboard size={80} className="mb-6" />
-                      <h2 className="text-2xl font-black uppercase tracking-widest text-white">Project Vault Empty</h2>
-                      <p className="mt-2 text-sm font-bold uppercase tracking-widest">Initiate a survey to begin your first takeoff</p>
-                    </div>
-                  ) : (
-                    bids.map(bid => <VaultProjectCard key={bid.id} bid={bid} onAudit={() => {}} />)
-                  )}
-                </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-32">
+                    {bids.length === 0 ? (
+                      <div className="col-span-full py-32 flex flex-col items-center opacity-30">
+                        <LayoutDashboard size={80} className="mb-6" />
+                        <h2 className="text-2xl font-black uppercase tracking-widest text-white">Project Vault Empty</h2>
+                        <p className="mt-2 text-sm font-bold uppercase tracking-widest">Initiate a survey to begin your first takeoff</p>
+                      </div>
+                    ) : (
+                      bids.map(bid => <VaultProjectCard key={bid.id} bid={bid} onAudit={() => {}} />)
+                    )}
+                  </div>
+                </ComposeInspiredTemplate>
               </motion.div>
             )}
 
@@ -513,7 +562,13 @@ const App: React.FC = () => {
                 exit={{ opacity: 0, scale: 0.98 }}
                 className="max-w-4xl mx-auto"
               >
-                <BidWizard onComplete={handleComplete} settings={settings} userLocation={userLocation} />
+                <ComposeInspiredTemplate
+                  variant="new"
+                  title="Survey Wizard"
+                  subtitle="Guided workflow for a faster and cleaner bid build"
+                >
+                  <BidWizard onComplete={handleComplete} settings={settings} userLocation={userLocation} />
+                </ComposeInspiredTemplate>
               </motion.div>
             )}
 
@@ -525,7 +580,13 @@ const App: React.FC = () => {
                 exit={{ opacity: 0 }}
                 className="h-[80vh]"
               >
-                <VirtualToolbox onClose={() => setActiveTab('vault')} settings={settings} userLocation={userLocation} initialTool={initialToolId} />
+                <ComposeInspiredTemplate
+                  variant="toolbox"
+                  title="Virtual Tools"
+                  subtitle="Measurement and diagnostics with a unified tool shell"
+                >
+                  <VirtualToolbox onClose={() => setActiveTab('vault')} settings={settings} userLocation={userLocation} initialTool={initialToolId} />
+                </ComposeInspiredTemplate>
               </motion.div>
             )}
 
@@ -537,7 +598,13 @@ const App: React.FC = () => {
                 exit={{ opacity: 0, x: 20 }}
                 className="max-w-3xl mx-auto"
               >
-                <GrandMasterChat onClose={() => setActiveTab('vault')} initialContext={{ settings }} />
+                <ComposeInspiredTemplate
+                  variant="foreman"
+                  title="Foreman AI"
+                  subtitle="Context-aware assistant using the same flow language as the rest of the app"
+                >
+                  <GrandMasterChat onClose={() => setActiveTab('vault')} initialContext={{ settings }} />
+                </ComposeInspiredTemplate>
               </motion.div>
             )}
           </AnimatePresence>
@@ -624,6 +691,12 @@ const App: React.FC = () => {
         <FirstRunBetaModal
           onAccept={handleAcceptBetaNotice}
           onCancel={handleCancelAndExit}
+        />
+      )}
+      {showBetaJoinModal && (
+        <BetaJoinModal
+          defaultEmail={userProfile?.email || localStorage.getItem('estimetric_beta_join_email') || ''}
+          onSubmit={handleBetaJoin}
         />
       )}
     </div>
