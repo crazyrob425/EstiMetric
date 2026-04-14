@@ -21,7 +21,8 @@ const BetaJoinModal: React.FC<BetaJoinModalProps> = ({ defaultEmail = '', onSubm
   const submit = async () => {
     const cleanedEmail = email.trim();
     const cleanedContact = contactInfo.trim();
-    if (!cleanedEmail || !cleanedContact || submitting) {
+    if (submitting) return;
+    if (!cleanedEmail || !cleanedContact) {
       setError('Email and contact info are required to join beta for free.');
       return;
     }

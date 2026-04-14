@@ -274,7 +274,7 @@ const App: React.FC = () => {
 
     try {
       if (user) {
-        await addDoc(collection(db, `users/${user.uid}/betaJoins`), joinRecord);
+        await addDoc(collection(db, `users/${user.uid}/beta_joins`), joinRecord);
       } else {
         const pendingKey = 'estimetric_pending_beta_joins';
         const previous = localStorage.getItem(pendingKey);
@@ -287,7 +287,7 @@ const App: React.FC = () => {
       localStorage.setItem('estimetric_beta_join_email', payload.email.trim());
       setShowBetaJoinModal(false);
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, user ? `users/${user.uid}/betaJoins` : 'local-beta-joins');
+      handleFirestoreError(error, OperationType.CREATE, user ? `users/${user.uid}/beta_joins` : 'local-beta-joins');
     }
   };
 
