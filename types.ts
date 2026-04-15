@@ -120,3 +120,8 @@ export interface BetaFeedbackSubmission {
   source: 'android-beta';
   userId?: string | null;
 }
+
+export interface BetaJoinSubmissionPayload {
+  email: string;
+  contactInfo: string;
+}
