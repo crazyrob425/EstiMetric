@@ -1,5 +1,47 @@
-import { GoogleGenAI, Modality, FunctionDeclaration, Type, GenerateContentResponse } from "@google/genai";
+import { GoogleGenAI, Modality, FunctionDeclaration, Type } from "@google/genai";
 import { MaterialItem, QuoteAnalysisResponse, ProjectTier, ProjectSpecs, BidData, RemodelStyle, ThinkingBudget, AppSettings, MaterialSuggestion } from "../types.ts";
+
+// ─── Shared AudioContext ──────────────────────────────────────────────────────
+// Browsers cap the number of AudioContext instances (~6). Reuse a single one
+// instead of creating a new context on every TTS call.
+let _sharedAudioCtx: AudioContext | null = null;
+function getAudioCtx(): AudioContext {
+  if (!_sharedAudioCtx || _sharedAudioCtx.state === 'closed') {
+    _sharedAudioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)({ sampleRate: 24000 });
+  }
+  return _sharedAudioCtx;
+}
+
+// ─── Exponential-backoff retry ────────────────────────────────────────────────
+// Retries on rate-limit (429 / RESOURCE_EXHAUSTED) errors with doubling delay.
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, baseDelayMs = 1000): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      const isRateLimit = msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') ||
+        (typeof err === 'object' && err !== null && 'status' in err &&
+          (err as { status: number }).status === 429);
+      if (!isRateLimit || attempt === maxRetries - 1) throw err;
+      await new Promise<void>(resolve => setTimeout(resolve, baseDelayMs * Math.pow(2, attempt)));
+    }
+  }
+  throw lastError;
+}
+
+// ─── Typing for live-pricing results ─────────────────────────────────────────
+export interface PricingResult {
+  price: string;
+  confidence: 'High' | 'Medium' | 'Low' | 'Alert';
+  sourceName: string;
+  sourceUrl?: string;
+  mapUrl?: string;
+  amazonPrice?: string;
+  auditDelta?: number;
+}
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -46,7 +88,25 @@ async function decodePcmData(data: Uint8Array, ctx: AudioContext, sampleRate: nu
   return buffer;
 }
 
-export async function chatWithGrandMaster(message: string, context?: any): Promise<{ text: string, toolCalls?: any[] }> {
+// ─── Foreman context type ─────────────────────────────────────────────────────
+export interface ForemanContext {
+  isAwake?: boolean;
+  thinkingBudget?: ThinkingBudget;
+  speedPriority?: boolean;
+  settings?: {
+    thinkingBudget?: ThinkingBudget;
+    preferredVoice?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+export interface FunctionCallResult {
+  name: string;
+  args: Record<string, unknown>;
+}
+
+export async function chatWithGrandMaster(message: string, context?: ForemanContext): Promise<{ text: string, toolCalls?: FunctionCallResult[] }> {
   try {
     const isAwake = context?.isAwake || false;
     const model = isAwake ? 'gemini-3.1-pro-preview' : 'gemini-3-flash-preview';
@@ -58,13 +118,13 @@ export async function chatWithGrandMaster(message: string, context?: any): Promi
       model: model,
       contents: [{ role: "user", parts: [{ text: `CONTEXT: ${JSON.stringify(context)}\nMSG: ${message}` }] }],
       config: {
-        thinkingConfig: { thinkingLevel: getThinkingBudget(context?.thinkingBudget || context?.settings?.thinkingBudget || 'Standard', model) as any },
+        thinkingConfig: { thinkingLevel: getThinkingBudget(context?.thinkingBudget || context?.settings?.thinkingBudget || 'Standard', model) as string },
         tools: isAwake ? [{ functionDeclarations: controlTools }] : [{ googleSearch: {} }],
         systemInstruction: systemInstruction
       }
     });
 
-    return { text: response.text || "...", toolCalls: response.functionCalls };
+    return { text: response.text || "...", toolCalls: response.functionCalls as FunctionCallResult[] | undefined };
   } catch (err) {
     return { text: "The trade logic server is currently optimizing. Please retry in 5 seconds." };
   }
@@ -77,17 +137,19 @@ export async function speakText(text: string, voiceName: string = 'Fenrir'): Pro
       contents: [{ parts: [{ text: text }] }],
       config: {
         responseModalities: [Modality.AUDIO],
-        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName as any } } },
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName as string } } },
       },
     });
     const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
     if (!base64Audio) return;
-    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+    const audioCtx = getAudioCtx();
     const audioBuffer = await decodePcmData(decodeBase64(base64Audio), audioCtx, 24000, 1);
     const source = audioCtx.createBufferSource();
     source.buffer = audioBuffer;
     source.connect(audioCtx.destination);
     source.start();
+    // Disconnect after playback to release graph resources
+    source.onended = () => source.disconnect();
   } catch (error) {
     console.warn("Audio output suppressed.");
   }
@@ -131,8 +193,8 @@ export async function optimizeMaterials(materials: MaterialItem[], specs: Projec
   } catch (err) { return []; }
 }
 
-export async function fetchLivePricing(materialName: string, settings: AppSettings, userLocation?: { lat: number, lon: number } | null): Promise<any> {
-  try {
+export async function fetchLivePricing(materialName: string, settings: AppSettings, userLocation?: { lat: number, lon: number } | null): Promise<PricingResult> {
+  const doFetch = async (): Promise<PricingResult> => {
     const modelName = 'gemini-3-flash-preview';
     const response = await ai.models.generateContent({
       model: modelName,
@@ -142,7 +204,9 @@ export async function fetchLivePricing(materialName: string, settings: AppSettin
       },
     });
     const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    const sourceUrls = groundingChunks.map((chunk: any) => chunk.web?.uri || chunk.maps?.uri).filter(Boolean);
+    const sourceUrls = (groundingChunks as Array<{ web?: { uri?: string }; maps?: { uri?: string } }>)
+      .map((chunk) => chunk.web?.uri ?? chunk.maps?.uri)
+      .filter((u): u is string => Boolean(u));
     
     const text = response.text || "";
     const priceMatch = text.match(/\$\d+(\.\d{2})?/);
@@ -150,9 +214,15 @@ export async function fetchLivePricing(materialName: string, settings: AppSettin
       price: priceMatch ? priceMatch[0] : "Check Store", 
       confidence: 'Medium',
       sourceName: text.includes("Home Depot") ? "Home Depot" : text.includes("Lowe's") ? "Lowe's" : "Market Average",
-      sourceUrl: sourceUrls[0] || undefined
+      sourceUrl: sourceUrls[0] ?? undefined
     };
-  } catch (err) { return { price: "Check Local Store", confidence: 'Alert' }; }
+  };
+
+  try {
+    return await withRetry(doFetch);
+  } catch {
+    return { price: "Check Local Store", confidence: 'Alert', sourceName: 'Unavailable' };
+  }
 }
 
 export async function analyzeRemodelProject(imageBytes: string, projectType: string, tier: ProjectTier, budget: ThinkingBudget = 'Standard'): Promise<QuoteAnalysisResponse> {

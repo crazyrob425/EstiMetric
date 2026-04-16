@@ -64,6 +64,8 @@ export interface BidData {
   contactInfo: string;
   status: 'Draft' | 'Sent' | 'Approved';
   date: string;
+  /** Unix ms timestamp of the most recent client-side write — used for last-write-wins conflict resolution. */
+  lastModified?: number;
   aiReasoningLog?: string[];
   revisions?: BidHistoryEntry[];
   spatialProfile?: SpatialData;

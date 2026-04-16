@@ -25,8 +25,15 @@ export interface ReferenceAsset {
   timestamp: number;
 }
 
+// ─── Singleton DB connection ───────────────────────────────────────────────────
+// Opening a new IDBDatabase on every operation wastes connections and can cause
+// version-change conflicts. Reuse a single connection for the lifetime of the page.
+let _dbPromise: Promise<IDBDatabase> | null = null;
+
 const openDB = (): Promise<IDBDatabase> => {
-  return new Promise((resolve, reject) => {
+  if (_dbPromise) return _dbPromise;
+
+  _dbPromise = new Promise((resolve, reject) => {
     try {
       if (typeof indexedDB === 'undefined') {
         reject(new Error("IndexedDB not supported"));
@@ -40,11 +47,22 @@ const openDB = (): Promise<IDBDatabase> => {
         if (!db.objectStoreNames.contains(REFERENCE_STORE)) db.createObjectStore(REFERENCE_STORE, { keyPath: 'id' });
       };
       request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
+      request.onerror = () => {
+        _dbPromise = null; // reset so the next call retries
+        reject(request.error);
+      };
+      // If the database is blocked (e.g. another tab is upgrading), reset the cached promise
+      request.onblocked = () => {
+        _dbPromise = null;
+        reject(new Error("IndexedDB version upgrade blocked"));
+      };
     } catch(e) {
+      _dbPromise = null;
       reject(e);
     }
   });
+
+  return _dbPromise;
 };
 
 export const StorageService = {
@@ -61,7 +79,7 @@ export const StorageService = {
       const db = await openDB();
       return new Promise((resolve) => {
         const request = db.transaction(PRICE_STORE, 'readonly').objectStore(PRICE_STORE).get(material);
-        request.onsuccess = () => resolve(request.result || null);
+        request.onsuccess = () => resolve(request.result as PriceRecord ?? null);
         request.onerror = () => resolve(null);
       });
     } catch(e) { return null; }
@@ -73,7 +91,7 @@ export const StorageService = {
       return new Promise((resolve) => {
         const request = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).getAll();
         request.onsuccess = () => {
-          const total = request.result.reduce((acc: number, curr: any) => acc + (JSON.stringify(curr).length), 0);
+          const total = (request.result as unknown[]).reduce((acc: number, curr) => acc + (JSON.stringify(curr).length), 0);
           resolve(total);
         };
         request.onerror = () => resolve(0);
@@ -81,12 +99,12 @@ export const StorageService = {
     } catch(e) { return 0; }
   },
 
-  async getAllProjects(): Promise<any[]> {
+  async getAllProjects(): Promise<unknown[]> {
     try {
       const db = await openDB();
       return new Promise((resolve) => {
         const request = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).getAll();
-        request.onsuccess = () => resolve(request.result);
+        request.onsuccess = () => resolve(request.result as unknown[]);
         request.onerror = () => resolve([]);
       });
     } catch(e) { return []; }
@@ -97,7 +115,7 @@ export const StorageService = {
       const db = await openDB();
       return new Promise((resolve) => {
         const request = db.transaction(REFERENCE_STORE, 'readonly').objectStore(REFERENCE_STORE).getAll();
-        request.onsuccess = () => resolve(request.result || []);
+        request.onsuccess = () => resolve((request.result as ReferenceAsset[]) || []);
         request.onerror = () => resolve([]);
       });
     } catch(e) { return []; }
@@ -108,19 +126,22 @@ export const StorageService = {
       const db = await openDB();
       const transaction = db.transaction(REFERENCE_STORE, 'readwrite');
       transaction.objectStore(REFERENCE_STORE).delete(id);
-    } catch(e) {}
+    } catch(e) { /* no-op */ }
   },
 
   async saveReference(asset: Partial<ReferenceAsset>): Promise<void> {
     try {
       const db = await openDB();
       const transaction = db.transaction(REFERENCE_STORE, 'readwrite');
-      const data = {
+      const data: ReferenceAsset = {
         id: asset.id || Math.random().toString(36).substr(2, 9),
+        url: asset.url || '',
+        category: asset.category || '',
+        title: asset.title || '',
+        isCustom: asset.isCustom ?? true,
         timestamp: asset.timestamp || Date.now(),
-        ...asset
       };
       transaction.objectStore(REFERENCE_STORE).put(data);
-    } catch(e) {}
+    } catch(e) { /* no-op */ }
   }
 };

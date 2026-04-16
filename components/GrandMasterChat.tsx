@@ -1,21 +1,27 @@
 import React, { useState, useRef, useEffect } from 'react';
 import MetallicPanel from './MetallicPanel.tsx';
 import { runForemanGraph } from '../services/aiOrchestrator.ts';
-import { speakText } from '../services/geminiService.ts';
+import { speakText, ForemanContext } from '../services/geminiService.ts';
 import { nexus } from '../services/nexusProtocol.ts';
+import { AppSettings } from '../types.ts';
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
-  metrics?: any;
   routingType?: string;
   hwMode?: string;
 }
 
+interface GrandMasterChatContext extends ForemanContext {
+  settings?: AppSettings;
+}
+
 const WAKE_PHRASE = "AUTH_LEVEL_DESIGN_LEAD_206425";
 const SLEEP_PHRASE = "AUTH_LEVEL_FOREMAN_STABLE_425206";
+// Cap in-memory history to prevent unbounded growth during long sessions
+const MAX_MESSAGE_HISTORY = 100;
 
-const GrandMasterChat: React.FC<{ onClose: () => void, initialContext?: any, onCommand?: any }> = ({ onClose, initialContext, onCommand }) => {
+const GrandMasterChat: React.FC<{ onClose: () => void, initialContext?: GrandMasterChatContext }> = ({ onClose, initialContext }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -79,15 +85,20 @@ const GrandMasterChat: React.FC<{ onClose: () => void, initialContext?: any, onC
     setLoading(true);
 
     try {
-      const result = await runForemanGraph(userMsg, { ...initialContext, isAwake });
+      const context: ForemanContext = { ...initialContext, isAwake };
+      const result = await runForemanGraph(userMsg, context);
       const lastBotMsg = result.messages[result.messages.length - 1];
       
-      setMessages(prev => [...prev, { 
-        role: 'assistant', 
-        content: lastBotMsg.content,
-        routingType: result.routing,
-        hwMode: result.hardware
-      }]);
+      setMessages(prev => {
+        const next: Message[] = [...prev, { 
+          role: 'assistant', 
+          content: lastBotMsg.content,
+          routingType: result.routing,
+          hwMode: result.hardware
+        }];
+        // Trim to prevent unbounded memory growth in long sessions
+        return next.length > MAX_MESSAGE_HISTORY ? next.slice(next.length - MAX_MESSAGE_HISTORY) : next;
+      });
 
       const voice = isAwake ? 'Kore' : (initialContext?.settings?.preferredVoice || 'Fenrir');
       speakText(lastBotMsg.content, voice);
