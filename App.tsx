@@ -304,7 +304,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleComplete = async (newBid: BidData) => {
+  const handleComplete = useCallback(async (newBid: BidData) => {
     const bidWithTimestamp: BidData = { ...newBid, lastModified: Date.now() };
     if (user) {
       try {
@@ -319,7 +319,7 @@ const App: React.FC = () => {
       localStorage.setItem('estimetric_bids', JSON.stringify(updated));
     }
     setActiveTab('vault');
-  };
+  }, [user, bids]);
 
   const handleSaveSettings = async (newSettings: AppSettings) => {
     setSettings(newSettings);
@@ -562,7 +562,7 @@ const App: React.FC = () => {
                         <p className="mt-2 text-sm font-bold uppercase tracking-widest">Initiate a survey to begin your first takeoff</p>
                       </div>
                     ) : (
-                      bids.map(bid => <VaultProjectCard key={bid.id} bid={bid} onAudit={(b) => { handleComplete(b); }} />)
+                      bids.map(bid => <VaultProjectCard key={bid.id} bid={bid} onAudit={handleComplete} />)
                     )}
                   </div>
                 </ComposeInspiredTemplate>

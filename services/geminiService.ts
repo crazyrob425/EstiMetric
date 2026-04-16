@@ -162,7 +162,7 @@ export async function optimizeMaterials(materials: MaterialItem[], specs: Projec
       model: model,
       contents: `Audit materials for a ${style} ${tier} project: ${JSON.stringify(materials)}. Based on specs: ${JSON.stringify(specs)}. Return a JSON array of MaterialSuggestion objects.`,
       config: { 
-        thinkingConfig: { thinkingLevel: getThinkingBudget(budget, model) as any }, 
+        thinkingConfig: { thinkingLevel: getThinkingBudget(budget, model) as string }, 
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
@@ -237,7 +237,7 @@ export async function analyzeRemodelProject(imageBytes: string, projectType: str
         ] 
       },
       config: { 
-        thinkingConfig: { thinkingLevel: getThinkingBudget(budget, model) as any }, 
+        thinkingConfig: { thinkingLevel: getThinkingBudget(budget, model) as string }, 
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -292,7 +292,7 @@ export async function analyzeRemodelProjectFromText(specs: ProjectSpecs, tier: P
       model: model,
       contents: `Perform architectural analysis for the following project: ${JSON.stringify(specs)}. Tier: ${tier}. Return JSON.`,
       config: { 
-        thinkingConfig: { thinkingLevel: getThinkingBudget(budget, model) as any }, 
+        thinkingConfig: { thinkingLevel: getThinkingBudget(budget, model) as string }, 
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -342,7 +342,7 @@ export async function analyzeRemodelProjectFromText(specs: ProjectSpecs, tier: P
 
 export async function simulateRemodel(beforeImage: string | null, blueprint: string | null, prompt: string, tier: ProjectTier, style: RemodelStyle): Promise<string | null> {
   try {
-    const parts: any[] = [{ text: `Architectural visualization of a ${style} ${tier} remodel. ${prompt}` }];
+    const parts: Array<{ text?: string; inlineData?: { data: string; mimeType: string } }> = [{ text: `Architectural visualization of a ${style} ${tier} remodel. ${prompt}` }];
     if (beforeImage) parts.push({ inlineData: { data: beforeImage, mimeType: 'image/jpeg' } });
     
     const response = await ai.models.generateContent({
@@ -361,7 +361,7 @@ export async function generateGrandmasterProposal(bid: Partial<BidData>, extraNo
     const response = await ai.models.generateContent({
       model: model,
       contents: `Draft a professional architectural bid proposal based on: ${JSON.stringify(bid)}. Extra context: ${extraNotes}. Tone: Authoritative yet accessible.`,
-      config: { thinkingConfig: { thinkingLevel: getThinkingBudget(budget, model) as any } }
+      config: { thinkingConfig: { thinkingLevel: getThinkingBudget(budget, model) as string } }
     });
     return response.text || "Proposal failed to generate.";
   } catch (e) { return "Draft unavailable."; }
@@ -384,7 +384,14 @@ export async function getRecommendedStyles(bid: Partial<BidData>): Promise<Remod
   } catch (e) { return ["Modern", "Minimalist", "Industrial", "Scandinavian"]; }
 }
 
-export async function analyzeSurfaceThermal(base64Image: string, ambientTemp: number, humidity: number): Promise<any> {
+export interface ThermalAnalysisResult {
+  temp: number;
+  material: string;
+  emissivity: number;
+  notes: string;
+}
+
+export async function analyzeSurfaceThermal(base64Image: string, ambientTemp: number, humidity: number): Promise<ThermalAnalysisResult | null> {
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',

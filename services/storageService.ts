@@ -131,13 +131,17 @@ export const StorageService = {
 
   async saveReference(asset: Partial<ReferenceAsset>): Promise<void> {
     try {
+      if (!asset.url || !asset.category || !asset.title) {
+        console.warn("StorageService.saveReference: missing required fields (url, category, title) — skipping save.");
+        return;
+      }
       const db = await openDB();
       const transaction = db.transaction(REFERENCE_STORE, 'readwrite');
       const data: ReferenceAsset = {
         id: asset.id || Math.random().toString(36).substr(2, 9),
-        url: asset.url || '',
-        category: asset.category || '',
-        title: asset.title || '',
+        url: asset.url,
+        category: asset.category,
+        title: asset.title,
         isCustom: asset.isCustom ?? true,
         timestamp: asset.timestamp || Date.now(),
       };

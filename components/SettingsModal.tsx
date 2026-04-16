@@ -38,7 +38,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, userProfile, on
                       {['Free', 'Pro', 'Elite', 'Enterprise'].map(tier => (
                         <button 
                           key={tier} 
-                          onClick={() => setLocalProfile(p => p ? {...p, membershipTier: tier as any} : p)} 
+                          onClick={() => setLocalProfile(p => p ? {...p, membershipTier: tier as 'Free' | 'Pro' | 'Elite' | 'Enterprise'} : p)} 
                           className={`p-4 rounded-xl border-2 font-black text-[10px] uppercase tracking-widest transition-all ${localProfile.membershipTier === tier ? 'bg-purple-600 text-white border-purple-400 shadow-[0_0_15px_rgba(168,85,247,0.3)]' : 'bg-white/5 text-slate-400 border-white/5 hover:border-white/10'}`}
                         >
                           {tier}
@@ -54,7 +54,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, userProfile, on
                     {['Fenrir', 'Charon', 'Kore', 'Puck', 'Zephyr'].map(voice => (
                       <button 
                         key={voice} 
-                        onClick={() => setLocalSettings(s => ({...s, preferredVoice: voice as any}))} 
+                        onClick={() => setLocalSettings(s => ({...s, preferredVoice: voice as AppSettings['preferredVoice']}))} 
                         className={`p-4 rounded-xl border-2 font-black text-[10px] uppercase tracking-widest transition-all ${localSettings.preferredVoice === voice ? 'bg-blue-600 text-white border-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.3)]' : 'bg-white/5 text-slate-400 border-white/5 hover:border-white/10'}`}
                       >
                         {voice}
@@ -71,7 +71,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, userProfile, on
                       <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Primary Source</label>
                       <select 
                         value={localSettings.pricingSource} 
-                        onChange={e => setLocalSettings(s => ({...s, pricingSource: e.target.value as any}))}
+                        onChange={e => setLocalSettings(s => ({...s, pricingSource: e.target.value as import('../types').PricingSource}))}
                         className="w-full bg-slate-800 text-white border border-white/10 rounded-xl p-3 font-bold outline-none focus:border-blue-500 transition-colors"
                       >
                         <option value="Average">Market Average</option>

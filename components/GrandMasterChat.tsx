@@ -18,7 +18,9 @@ interface GrandMasterChatContext extends ForemanContext {
 
 const WAKE_PHRASE = "AUTH_LEVEL_DESIGN_LEAD_206425";
 const SLEEP_PHRASE = "AUTH_LEVEL_FOREMAN_STABLE_425206";
-// Cap in-memory history to prevent unbounded growth during long sessions
+// Cap in-memory history to prevent unbounded growth during long sessions.
+// 100 messages ≈ ~50 KB of plain text — well within mobile heap budgets while
+// still providing enough context for the AI to give coherent replies.
 const MAX_MESSAGE_HISTORY = 100;
 
 const GrandMasterChat: React.FC<{ onClose: () => void, initialContext?: GrandMasterChatContext }> = ({ onClose, initialContext }) => {

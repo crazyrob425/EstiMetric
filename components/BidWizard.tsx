@@ -9,7 +9,7 @@ interface BidWizardProps {
   onComplete: (bid: BidData) => void;
   initialBid?: BidData;
   settings: AppSettings;
-  onConsultGrandMaster?: (context: any) => void;
+  onConsultGrandMaster?: (context: Record<string, unknown>) => void;
   initialStep?: number;
   userLocation?: {lat: number, lon: number} | null;
 }
