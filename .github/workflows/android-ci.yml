@@ -1,0 +1,80 @@
+name: Android CI with Docker
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    container:
+      image: cirrusci/android-sdk:latest
+      options: --cpus 2 --memory 4096m
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+      
+      - name: Grant execute permission to gradlew
+        run: chmod +x gradlew
+      
+      - name: Decode Keystore
+        if: github.event_name == 'push'
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > app/release.keystore
+      
+      - name: Run lint
+        run: ./gradlew lint
+      
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest
+      
+      - name: Build debug APK
+        run: ./gradlew assembleDebug
+      
+      - name: Build release APK
+        if: github.event_name == 'push'
+        env:
+          KEYSTORE_PATH: app/release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease
+      
+      - name: Upload APKs
+        uses: actions/upload-artifact@v3
+        with:
+          name: apks
+          path: app/build/outputs/apk/
+
+  test:
+    runs-on: ubuntu-latest
+    
+    container:
+      image: cirrusci/android-sdk:latest
+      options: --cpus 2 --memory 4096m
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+      
+      - name: Grant execute permission to gradlew
+        run: chmod +x gradlew
+      
+      - name: Run all tests
+        run: ./gradlew test --info

@@ -1,9 +1,0 @@
-{
-  "name": "EstiMetric: Precision Bidding",
-  "description": "A premium architectural bidding tool with The Foreman: a grumpy genius AI that handles permit codes, material costs, and site shortcuts.",
-  "requestFramePermissions": [
-    "camera",
-    "microphone",
-    "geolocation"
-  ]
-}

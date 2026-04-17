@@ -1,0 +1,3 @@
+-keep class com.example.estimetric.** { *; }
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
