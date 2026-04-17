@@ -1,0 +1,24 @@
+FROM cirrusci/android-sdk:latest
+
+WORKDIR /app
+
+# Copy project files
+COPY . .
+
+# Copy keystore
+COPY app/release.keystore /app/app/release.keystore
+
+# Set permissions
+RUN chmod +x gradlew
+
+# Set environment variables for signing
+ENV KEYSTORE_PATH=/app/app/release.keystore
+ENV KEYSTORE_PASSWORD=estimetric123
+ENV KEY_ALIAS=estimetric
+ENV KEY_PASSWORD=estimetric123
+
+# Build release APK
+RUN ./gradlew assembleRelease -x lint --stacktrace
+
+# Output
+CMD ["ls", "-lah", "app/build/outputs/apk/release/"]
