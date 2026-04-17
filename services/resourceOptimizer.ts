@@ -37,7 +37,7 @@ class ResourceOptimizer {
   private async initTelemetry() {
     try {
         if (typeof navigator !== 'undefined' && 'getBattery' in navigator) {
-          const battery: any = await (navigator as any).getBattery();
+          const battery: any = await (navigator as unknown as { getBattery(): Promise<{ level: number; charging: boolean }> }).getBattery();
           const updateBattery = () => {
             this.state.charging = battery.charging;
             this.state.batteryLevel = battery.level;
@@ -47,7 +47,7 @@ class ResourceOptimizer {
           updateBattery();
         }
 
-        const conn = (navigator as any).connection;
+        const conn = (navigator as unknown as { connection?: { effectiveType?: string } }).connection;
         if (conn) {
           const updateConn = () => {
             this.state.onWifi = conn.type === 'wifi' || (conn.effectiveType === '4g' && !conn.saveData);

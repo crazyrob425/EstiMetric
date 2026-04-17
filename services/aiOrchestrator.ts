@@ -1,4 +1,4 @@
-import { chatWithGrandMaster } from "./geminiService.ts";
+import { chatWithGrandMaster, ForemanContext, FunctionCallResult } from "./geminiService.ts";
 
 /**
  * Foreman Intelligence Core (Native Implementation)
@@ -6,11 +6,23 @@ import { chatWithGrandMaster } from "./geminiService.ts";
  * 100% Native TypeScript. Zero external logic libraries.
  */
 
+interface ForemanMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 interface ForemanState {
-  messages: any[];
+  messages: ForemanMessage[];
   routing: string;
   hardware: string;
-  context: any;
+  context: ForemanContext;
+}
+
+export interface ForemanResult {
+  messages: ForemanMessage[];
+  routing: string;
+  hardware: string;
+  toolCalls?: FunctionCallResult[];
 }
 
 export const hardwareStatus = "Native Core Online";
@@ -31,20 +43,22 @@ const triageNode = (input: string): 'deep' | 'fast' => {
 };
 
 // Node 2: Fast Path (Standard Logic)
-const fastNode = async (input: string, context: any) => {
+const fastNode = async (input: string, context: ForemanContext) => {
   const response = await chatWithGrandMaster(input, { ...context, speedPriority: true });
   return {
     content: response.text,
-    hardware: "FLASH-LITE-CORE"
+    hardware: "FLASH-LITE-CORE",
+    toolCalls: response.toolCalls,
   };
 };
 
 // Node 3: Deep Path (Pro Reasoning)
-const deepNode = async (input: string, context: any) => {
+const deepNode = async (input: string, context: ForemanContext) => {
   const response = await chatWithGrandMaster(input, { ...context, thinkingBudget: 'Deep' });
   return {
     content: response.text,
-    hardware: "PRO-LOGIC-NODE"
+    hardware: "PRO-LOGIC-NODE",
+    toolCalls: response.toolCalls,
   };
 };
 
@@ -52,7 +66,7 @@ const deepNode = async (input: string, context: any) => {
  * Executes the Foreman's logic flow manually.
  * This guarantees no import errors or polyfill crashes.
  */
-export async function runForemanGraph(userInput: string, appState: any) {
+export async function runForemanGraph(userInput: string, appState: ForemanContext): Promise<ForemanResult> {
   try {
     const currentState: ForemanState = {
       messages: [{ role: 'user', content: userInput }],
@@ -77,7 +91,8 @@ export async function runForemanGraph(userInput: string, appState: any) {
     return {
       messages: currentState.messages,
       routing: currentState.routing,
-      hardware: currentState.hardware
+      hardware: currentState.hardware,
+      toolCalls: result.toolCalls,
     };
 
   } catch (error) {
@@ -88,7 +103,7 @@ export async function runForemanGraph(userInput: string, appState: any) {
     return {
       messages: [{ role: 'user', content: userInput }, { role: 'assistant', content: fallback.text }],
       routing: 'EMERGENCY_RECOVERY',
-      hardware: 'FAILSAFE-MODE'
+      hardware: 'FAILSAFE-MODE',
     };
   }
 }

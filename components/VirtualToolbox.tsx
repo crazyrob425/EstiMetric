@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import MetallicPanel from './MetallicPanel.tsx';
 import { AppSettings } from '../types.ts';
-import { analyzeSurfaceThermal } from '../services/geminiService.ts';
+import { analyzeSurfaceThermal, ThermalAnalysisResult } from '../services/geminiService.ts';
 
-declare const cv: any; // OpenCV.js
+declare const cv: unknown; // OpenCV.js — no official @types package
 
 export type ToolType = 'spatial' | 'color' | 'magneto' | 'lux' | 'thermal' | 'acoustic' | 'seismic';
 
@@ -35,7 +35,7 @@ const VirtualToolbox: React.FC<VirtualToolboxProps> = ({ onClose, settings, user
   const [seismicData, setSeismicData] = useState<number[]>([]);
   const [magLevel, setMagLevel] = useState(0);
   const [ambientData, setAmbientData] = useState<{ temp: number, humidity: number, status: string } | null>(null);
-  const [surfaceData, setSurfaceData] = useState<{ temp: number, material: string, emissivity: number, notes: string } | null>(null);
+  const [surfaceData, setSurfaceData] = useState<ThermalAnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const animationRef = useRef<number | null>(null);
 
@@ -58,13 +58,13 @@ const VirtualToolbox: React.FC<VirtualToolboxProps> = ({ onClose, settings, user
       stream.getTracks().forEach(t => t.stop());
       videoRef.current.srcObject = null;
     }
-    window.removeEventListener('devicemotion', handleSeismic as any);
+    window.removeEventListener('devicemotion', handleSeismic as EventListener);
   };
 
   const requestSensorPermission = async () => {
-    if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
+    if (typeof (DeviceMotionEvent as unknown as { requestPermission?: () => Promise<string> }).requestPermission === 'function') {
       try {
-        const permissionState = await (DeviceMotionEvent as any).requestPermission();
+        const permissionState = await (DeviceMotionEvent as unknown as { requestPermission?: () => Promise<string> }).requestPermission();
         setSensorPermission(permissionState === 'granted' ? 'granted' : 'denied');
         if (permissionState === 'granted') initSeismic();
       } catch (e) {
@@ -213,7 +213,7 @@ const VirtualToolbox: React.FC<VirtualToolboxProps> = ({ onClose, settings, user
     }
   };
 
-  const initSeismic = () => window.addEventListener('devicemotion', handleSeismic as any);
+  const initSeismic = () => window.addEventListener('devicemotion', handleSeismic as EventListener);
   const handleSeismic = (event: DeviceMotionEvent) => {
     const accel = event.acceleration;
     if (!accel) return;

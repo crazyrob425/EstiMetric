@@ -9,7 +9,7 @@ interface VaultProjectCardProps {
   onAudit: (bid: BidData) => void;
 }
 
-const VaultProjectCard: React.FC<VaultProjectCardProps> = ({ bid, onAudit }) => {
+const VaultProjectCard: React.FC<VaultProjectCardProps> = React.memo(({ bid, onAudit }) => {
   const totalCost = (bid.materials?.reduce((acc, m) => acc + (m.unitPrice * (parseFloat(m.quantity) || 1)), 0) || 0) + (bid.laborCost || 0);
 
   return (
@@ -79,6 +79,8 @@ const VaultProjectCard: React.FC<VaultProjectCardProps> = ({ bid, onAudit }) => 
       </MetallicPanel>
     </motion.div>
   );
-};
+});
+
+VaultProjectCard.displayName = 'VaultProjectCard';
 
 export default VaultProjectCard;
