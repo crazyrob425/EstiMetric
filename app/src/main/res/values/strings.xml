@@ -2,4 +2,15 @@
 <resources>
     <string name="app_name">EstiMetric</string>
     <string name="hello_world">Hello, World!</string>
+    <string name="settings">Settings</string>
+    <string name="get_started">Get Started</string>
+    <string name="professional_estimating">Professional Estimating &amp; Bidding</string>
+    <string name="welcome_message">Welcome to EstiMetric! Configure your AI-powered estimating assistant with comprehensive settings.</string>
+    <string name="ai_apis">AI APIs</string>
+    <string name="gps_settings">GPS</string>
+    <string name="pricing_preferences">Pricing</string>
+    <string name="ai_personality">AI Personality</string>
+    <string name="bids">Bids</string>
+    <string name="cloud_sync">Cloud Sync</string>
+    <string name="profile">Profile</string>
 </resources>

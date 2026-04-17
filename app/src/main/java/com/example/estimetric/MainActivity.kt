@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
+import android.widget.Button
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 
@@ -15,6 +16,12 @@ class MainActivity : AppCompatActivity() {
         // Add settings button if it exists in the layout
         val settingsButton: FloatingActionButton? = findViewById(R.id.fab_settings)
         settingsButton?.setOnClickListener {
+            openSettings()
+        }
+        
+        // Handle Get Started button
+        val getStartedButton: Button? = findViewById(R.id.btn_get_started)
+        getStartedButton?.setOnClickListener {
             openSettings()
         }
     }
