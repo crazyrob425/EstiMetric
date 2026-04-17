@@ -9,11 +9,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
-    container:
-      image: cirrusci/android-sdk:latest
-      options: --cpus 2 --memory 4096m
-    
+
     steps:
       - uses: actions/checkout@v4
       
@@ -23,6 +19,9 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
           cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
       
       - name: Grant execute permission to gradlew
         run: chmod +x gradlew
@@ -51,18 +50,14 @@ jobs:
         run: ./gradlew assembleRelease
       
       - name: Upload APKs
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: apks
           path: app/build/outputs/apk/
 
   test:
     runs-on: ubuntu-latest
-    
-    container:
-      image: cirrusci/android-sdk:latest
-      options: --cpus 2 --memory 4096m
-    
+
     steps:
       - uses: actions/checkout@v4
       
@@ -72,6 +67,9 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
           cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
       
       - name: Grant execute permission to gradlew
         run: chmod +x gradlew
