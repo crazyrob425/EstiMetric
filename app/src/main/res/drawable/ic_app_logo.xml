@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- EstiMetric App Logo - Main Branding -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="192dp"
+    android:height="192dp"
+    android:viewportWidth="192"
+    android:viewportHeight="192">
+    
+    <!-- Background Circle -->
+    <path
+        android:fillColor="#6200EE"
+        android:pathData="M96,12 C148.627,12 192,55.373 192,108 C192,160.627 148.627,204 96,204 C43.373,204 0,160.627 0,108 C0,55.373 43.373,12 96,12 Z" />
+    
+    <!-- Inner Accent Circle -->
+    <path
+        android:fillColor="#03DAC5"
+        android:pathData="M96,28 C140.778,28 176,63.222 176,108 C176,152.778 140.778,188 96,188 C51.222,188 16,152.778 16,108 C16,63.222 51.222,28 96,28 Z"
+        android:alpha="0.3" />
+    
+    <!-- Stylized "E" for Estimation -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M50,60 L50,156 L130,156 L130,146 L62,146 L62,112 L125,112 L125,102 L62,102 L62,70 L130,70 L130,60 Z" />
+    
+    <!-- Metric bars representing data/measurement -->
+    <path
+        android:fillColor="#03DAC5"
+        android:pathData="M70,75 L75,75 L75,95 L70,95 Z" />
+    
+    <path
+        android:fillColor="#03DAC5"
+        android:pathData="M82,70 L87,70 L87,95 L82,95 Z" />
+    
+    <path
+        android:fillColor="#03DAC5"
+        android:pathData="M94,78 L99,78 L99,95 L94,95 Z" />
+    
+    <path
+        android:fillColor="#03DAC5"
+        android:pathData="M106,72 L111,72 L111,95 L106,95 Z" />
+    
+    <!-- Arrow pointing upward (growth/progress) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M96,50 L108,65 L102,65 L102,85 L90,85 L90,65 L84,65 Z" />
+</vector>
