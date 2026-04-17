@@ -10,10 +10,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     
-    container:
-      image: cirrusci/android-sdk:latest
-      options: --cpus 2 --memory 4096m
-    
     steps:
       - uses: actions/checkout@v4
       
@@ -51,17 +47,13 @@ jobs:
         run: ./gradlew assembleRelease
       
       - name: Upload APKs
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: apks
           path: app/build/outputs/apk/
 
   test:
     runs-on: ubuntu-latest
-    
-    container:
-      image: cirrusci/android-sdk:latest
-      options: --cpus 2 --memory 4096m
     
     steps:
       - uses: actions/checkout@v4
