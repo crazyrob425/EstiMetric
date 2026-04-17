@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- EstiMetric Splash Screen Background -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="1080dp"
+    android:height="1920dp"
+    android:viewportWidth="1080"
+    android:viewportHeight="1920">
+    
+    <!-- Top gradient section -->
+    <path
+        android:fillColor="#6200EE"
+        android:pathData="M0,0 L1080,0 L1080,600 L0,600 Z" />
+    
+    <!-- Middle gradient transition -->
+    <path
+        android:fillColor="#3700B3"
+        android:pathData="M0,600 L1080,600 L1080,1200 L0,1200 Z" />
+    
+    <!-- Bottom section -->
+    <path
+        android:fillColor="#1A237E"
+        android:pathData="M0,1200 L1080,1200 L1080,1920 L0,1920 Z" />
+    
+    <!-- Accent wave shape -->
+    <path
+        android:fillColor="#03DAC5"
+        android:pathData="M0,800 Q270,700 540,800 T1080,800 L1080,900 Q540,1000 0,900 Z"
+        android:alpha="0.3" />
+    
+    <!-- Center circle logo area -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M540,650 C703.888,650 840,786.112 840,950 C840,1113.888 703.888,1250 540,1250 C376.112,1250 240,1113.888 240,950 C240,786.112 376.112,650 540,650 Z"
+        android:alpha="0.1" />
+    
+    <!-- Decorative circles -->
+    <path
+        android:fillColor="#03DAC5"
+        android:pathData="M200,400 C228.627,400 252,376.627 252,348 C252,319.373 228.627,296 200,296 C171.373,296 148,319.373 148,348 C148,376.627 171.373,400 200,400 Z"
+        android:alpha="0.2" />
+    
+    <path
+        android:fillColor="#03DAC5"
+        android:pathData="M880,500 C908.627,500 932,476.627 932,448 C932,419.373 908.627,396 880,396 C851.373,396 828,419.373 828,448 C828,476.627 851.373,500 880,500 Z"
+        android:alpha="0.2" />
+    
+    <path
+        android:fillColor="#03DAC5"
+        android:pathData="M150,1600 C178.627,1600 202,1576.627 202,1548 C202,1519.373 178.627,1496 150,1496 C121.373,1496 98,1519.373 98,1548 C98,1576.627 121.373,1600 150,1600 Z"
+        android:alpha="0.2" />
+    
+    <path
+        android:fillColor="#03DAC5"
+        android:pathData="M930,1700 C958.627,1700 982,1676.627 982,1648 C982,1619.373 958.627,1596 930,1596 C901.373,1596 878,1619.373 878,1648 C878,1676.627 901.373,1700 930,1700 Z"
+        android:alpha="0.2" />
+</vector>

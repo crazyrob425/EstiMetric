@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- EstiMetric Background (for adaptive icon) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="192dp"
+    android:height="192dp"
+    android:viewportWidth="192"
+    android:viewportHeight="192">
+    
+    <!-- Main brand color background -->
+    <path
+        android:fillColor="#6200EE"
+        android:pathData="M0,0 L192,0 L192,192 L0,192 Z" />
+    
+    <!-- Subtle gradient accent -->
+    <path
+        android:fillColor="#3700B3"
+        android:pathData="M0,0 L192,0 L192,96 L0,96 Z"
+        android:alpha="0.3" />
+</vector>

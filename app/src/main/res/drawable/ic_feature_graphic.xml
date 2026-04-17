@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- EstiMetric Feature Graphic - Home Screen -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="512dp"
+    android:height="512dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    
+    <!-- Background gradient (simulated) -->
+    <path
+        android:fillColor="#6200EE"
+        android:pathData="M0,0 L512,0 L512,512 L0,512 Z" />
+    
+    <!-- Accent color overlay -->
+    <path
+        android:fillColor="#03DAC5"
+        android:pathData="M0,256 L512,256 L512,512 L0,512 Z"
+        android:alpha="0.2" />
+    
+    <!-- Central circle -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M256,80 C373.137,80 466,172.863 466,290 C466,407.137 373.137,500 256,500 C138.863,500 46,407.137 46,290 C46,172.863 138.863,80 256,80 Z" />
+    
+    <!-- Measurement bars -->
+    <path
+        android:fillColor="#6200EE"
+        android:pathData="M120,280 L150,280 L150,340 L120,340 Z" />
+    
+    <path
+        android:fillColor="#03DAC5"
+        android:pathData="M170,240 L200,240 L200,340 L170,340 Z" />
+    
+    <path
+        android:fillColor="#6200EE"
+        android:pathData="M220,200 L250,200 L250,340 L220,340 Z" />
+    
+    <path
+        android:fillColor="#03DAC5"
+        android:pathData="M270,260 L300,260 L300,340 L270,340 Z" />
+    
+    <path
+        android:fillColor="#6200EE"
+        android:pathData="M320,220 L350,220 L350,340 L320,340 Z" />
+    
+    <path
+        android:fillColor="#03DAC5"
+        android:pathData="M370,290 L400,290 L400,340 L370,340 Z" />
+    
+    <!-- Upward arrow (growth) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M256,140 L290,200 L270,200 L270,280 L242,280 L242,200 L222,200 Z" />
+</vector>

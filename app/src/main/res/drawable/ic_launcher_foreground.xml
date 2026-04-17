@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- EstiMetric Launcher Icon -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="192dp"
+    android:height="192dp"
+    android:viewportWidth="192"
+    android:viewportHeight="192">
+    
+    <!-- Gradient Background (simulated with layered shapes) -->
+    <path
+        android:fillColor="#6200EE"
+        android:pathData="M0,0 L192,0 L192,192 L0,192 Z" />
+    
+    <!-- Accent gradient overlay -->
+    <path
+        android:fillColor="#3700B3"
+        android:pathData="M0,96 L192,96 L192,192 L0,192 Z"
+        android:alpha="0.4" />
+    
+    <!-- Main circular icon container -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M96,24 C138.627,24 174,59.373 174,102 C174,144.627 138.627,180 96,180 C53.373,180 18,144.627 18,102 C18,59.373 53.373,24 96,24 Z" />
+    
+    <!-- EstiMetric icon mark -->
+    <!-- Estimation symbol (E shape) -->
+    <path
+        android:fillColor="#6200EE"
+        android:pathData="M60,65 L60,140 L120,140 L120,130 L72,130 L72,105 L110,105 L110,95 L72,95 L72,75 L120,75 L120,65 Z" />
+    
+    <!-- Metric data representation -->
+    <path
+        android:fillColor="#03DAC5"
+        android:pathData="M75,110 L80,110 L80,125 L75,125 Z" />
+    
+    <path
+        android:fillColor="#03DAC5"
+        android:pathData="M85,100 L90,100 L90,125 L85,125 Z" />
+    
+    <path
+        android:fillColor="#03DAC5"
+        android:pathData="M95,90 L100,90 L100,125 L95,125 Z" />
+    
+    <path
+        android:fillColor="#03DAC5"
+        android:pathData="M105,105 L110,105 L110,125 L105,125 Z" />
+</vector>
