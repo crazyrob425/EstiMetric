@@ -150,7 +150,7 @@ if "$cygwin" || "$msys" ; then
         if
             case $arg in                                #(
               -*)   false ;;                            # don't touch options #(
-              /?*)  t=${arg#)}; t=/${t%%/*}             # looks like a POSIX://www.gradle.org path
+              /?*)  t=${arg#/}; t=/${t%%/*}             # looks like a POSIX://www.gradle.org path
                     [ -e "$t" ] ;;                      #(
               *)    false ;;
             esac
